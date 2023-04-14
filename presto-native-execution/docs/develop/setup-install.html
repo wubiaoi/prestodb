@@ -1,0 +1,338 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+    <title>Presto Native Execution - Getting Started &#8212; Presto Native Execution  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/nature.css" />
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/sphinx_highlight.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Sample output of an orcfiledump tool" href="orc-dump-output.html" />
+    <link rel="prev" title="Performance Guide into TableScan and Aggregation" href="perf-scan-agg.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="orc-dump-output.html" title="Sample output of an orcfiledump tool"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="perf-scan-agg.html" title="Performance Guide into TableScan and Aggregation"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Presto Native Execution  documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../develop.html" accesskey="U">Developer Guide</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Presto Native Execution - Getting Started</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="presto-native-execution-getting-started">
+<h1>Presto Native Execution - Getting Started<a class="headerlink" href="#presto-native-execution-getting-started" title="Permalink to this heading">¶</a></h1>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<section id="git-github">
+<h3>Git &amp; Github<a class="headerlink" href="#git-github" title="Permalink to this heading">¶</a></h3>
+<p>1. Signup for a GitHub account if you don’t have one already.
+3. Set up public key authentication (using ssh keys) for GitHub, if you haven’t done so already
+4. Make sure you have git installed and works (Run git —version to confirm)</p>
+</section>
+<section id="java">
+<h3>Java<a class="headerlink" href="#java" title="Permalink to this heading">¶</a></h3>
+<p>We will be using JDK8 for Presto.</p>
+<ol class="arabic simple">
+<li><p>Install JDK8 from <a class="reference external" href="http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html">oracle.com</a></p></li>
+<li><p>Install <a class="reference external" href="https://adoptopenjdk.net/">Open JDK 11</a></p></li>
+<li><p>Add this line to your .bash_profile or .zshenv:</p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">JAVA_HOME</span><span class="o">=</span><span class="k">$(</span>/usr/libexec/java_home<span class="w"> </span>-v<span class="w"> </span><span class="m">1</span>.8.0<span class="k">)</span>
+</pre></div>
+</div>
+</section>
+<section id="source-code">
+<h3>Source Code<a class="headerlink" href="#source-code" title="Permalink to this heading">¶</a></h3>
+<p>Ensure you have access to the following repositories:</p>
+<ol class="arabic simple">
+<li><p><a class="reference external" href="https://github.com/prestodb/presto">Presto</a></p></li>
+<li><p><a class="reference external" href="https://github.com/facebookexternal/presto_cpp">Presto_cpp</a></p></li>
+<li><p><a class="reference external" href="https://github.com/facebookincubator/velox">Velox</a></p></li>
+</ol>
+</section>
+</section>
+<section id="id1">
+<h2>Presto<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h2>
+<p>It is assumed that the reader has some familiarity with Presto, if not please readup on basic terms and architecture
+<a class="reference external" href="https://prestodb.io/docs/current/overview/concepts.html">here</a>.</p>
+<img alt="../_images/presto.png" class="align-center" src="../_images/presto.png" />
+<p>We will setup Java based Presto co-ordinator and a C++ based Presto worker using the Velox library.</p>
+</section>
+<section id="setup-presto">
+<h2>Setup Presto<a class="headerlink" href="#setup-presto" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Fork <a class="reference external" href="https://github.com/prestodb/presto">prestodb/presto</a> repository by clicking on the “Fork” button.</p></li>
+</ol>
+<img alt="../_images/fork.png" class="align-center" src="../_images/fork.png" />
+<ol class="arabic simple" start="2">
+<li><p>Clone the repo to your laptop.</p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/&lt;YOUR_GITHUB_USERNAME&gt;/presto.git
+</pre></div>
+</div>
+<p>Then ensure you set the right upstream.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>remote<span class="w"> </span>add<span class="w"> </span>upstream<span class="w"> </span>git@github.com:prestodb/presto.git
+</pre></div>
+</div>
+<ol class="arabic simple" start="3">
+<li><p>Setup Maven</p></li>
+</ol>
+<p>If you are on Windows or Linux, look up in the maven docs on how to get maven running on your platform.
+If you are on a Mac, use  <a class="reference external" href="http://brew.sh/">Homebrew</a></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>brew<span class="w"> </span>install<span class="w"> </span>maven
+mvn<span class="w"> </span>--version<span class="w"> </span><span class="c1"># Should be 3.5.0</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="4">
+<li><p>Build Presto</p></li>
+</ol>
+<p>Go to presto directory and build:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>presto
+./mvnw<span class="w"> </span>clean<span class="w"> </span>install<span class="w"> </span>-DskipTests
+</pre></div>
+</div>
+<ol class="arabic simple" start="5">
+<li><p>Install IntelliJ</p></li>
+</ol>
+<p>Download and install IntellliJ
+You can also use any other IDE however the instructions in this document will only concern IntelliJ.</p>
+</section>
+<section id="setup-intellij">
+<h2>Setup IntelliJ<a class="headerlink" href="#setup-intellij" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Open IntelliJ and use ‘Open Existing’ to open the presto project</p></li>
+<li><dl class="simple">
+<dt>Create run configuration for HiveQueryRunner.</dt><dd><ol class="loweralpha simple">
+<li><p>Goto “Run -&gt; Edit Configurations”, click to add new Application</p></li>
+<li><p>Main class: <code class="docutils literal notranslate"><span class="pre">com.facebook.presto.hive.HiveQueryRunner</span></code></p></li>
+<li><p>VM options: <code class="docutils literal notranslate"><span class="pre">-ea</span> <span class="pre">-Xmx2G</span> <span class="pre">-XX:+ExitOnOutOfMemoryError</span> <span class="pre">-Duser.timezone=America/Bahia_Banderas</span> <span class="pre">-Dhive.security=legacy</span></code></p></li>
+<li><p>Working directory: <code class="docutils literal notranslate"><span class="pre">$MODULE_DIR$</span></code></p></li>
+<li><p>Use classpath of module: <code class="docutils literal notranslate"><span class="pre">presto-hive</span></code></p></li>
+</ol>
+</dd>
+</dl>
+</li>
+</ol>
+<img alt="../_images/intelij_setup.png" class="align-center" src="../_images/intelij_setup.png" />
+<p>Upon running this you should see something like the following:</p>
+<img alt="../_images/intelij_run_presto.png" class="align-center" src="../_images/intelij_run_presto.png" />
+</section>
+<section id="setup-presto-cpp">
+<h2>Setup presto_cpp<a class="headerlink" href="#setup-presto-cpp" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Clone presto_cpp GitHub repo from <a class="reference external" href="https://github.com/facebookexternal/presto_cpp">here</a></p></li>
+<li><p>Ensure that Velox is checked out as a submodule for presto_cpp</p></li>
+<li><p>This might require you to create a <a class="reference external" href="https://docs.github.com/en/github/authenticating-to-github/keeping-your-account-and-data-secure/creating-a-personal-access-token">Personal Access Token</a></p></li>
+<li><p>Then run command below and enter your Personal Access Token or password</p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init<span class="w"> </span>--recursive
+
+<span class="c1"># Let&#39;s ensure we can build presto_cpp</span>
+
+<span class="nv">$cd</span><span class="w"> </span>../presto_cpp
+$./scripts/setup-macos.sh
+
+$<span class="w"> </span>make<span class="w"> </span>debug
+</pre></div>
+</div>
+<ol class="arabic simple" start="5">
+<li><p>Load the project in CLion and build it. Make sure you check the option for <cite>CMake project</cite>. You should see a build directory like this :</p></li>
+</ol>
+<img alt="../_images/cmake_clion.png" class="align-center" src="../_images/cmake_clion.png" />
+</section>
+<section id="setup-velox">
+<h2>Setup Velox<a class="headerlink" href="#setup-velox" title="Permalink to this heading">¶</a></h2>
+<p>Note: For the purpose of this document, we will just use the submodule inside presto_cpp. Typically though you would checkout Velox independently and carry your work there.</p>
+<ol class="arabic simple">
+<li><p>Run the following commands if you are setting up on a Mac.</p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span><span class="nb">cd</span><span class="w"> </span>velox
+$<span class="w"> </span>./scripts/setup-macos.sh
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li><p>Also add the following in your ~/.profile</p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="nv">$HOME</span>/bin:<span class="nv">$HOME</span>/Library/Python/3.7/bin:<span class="nv">$PATH</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="3">
+<li><p>Now lets build the project</p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>make<span class="w"> </span>debug
+
+<span class="c1">#[Optional] Run unit tests</span>
+$<span class="w"> </span>make<span class="w"> </span>unittest
+</pre></div>
+</div>
+</section>
+<section id="end-to-end-run">
+<h2>End to End Run<a class="headerlink" href="#end-to-end-run" title="Permalink to this heading">¶</a></h2>
+<p>Let us now try and make a minor modification in Velox and call it from Presto.</p>
+<section id="make-changes-and-build">
+<h3>Make Changes and Build<a class="headerlink" href="#make-changes-and-build" title="Permalink to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Lets make some simple change, Consider this set of <a class="reference external" href="https://github.com/facebookincubator/velox/pull/37/files">changes here</a>. Add a similar function, say <code class="docutils literal notranslate"><span class="pre">bitwise_xor</span></code>.</p></li>
+<li><p>Make your changes inside the Velox subdirectory of <code class="docutils literal notranslate"><span class="pre">presto_cpp</span></code>.</p></li>
+<li><p>Make sure you can build your changes and that all the unit tests pass.</p></li>
+</ol>
+</section>
+<section id="add-presto-cpp-to-presto">
+<h3>Add presto_cpp to Presto<a class="headerlink" href="#add-presto-cpp-to-presto" title="Permalink to this heading">¶</a></h3>
+<p>We will add presto_cpp as a module to Presto.</p>
+<ol class="arabic simple">
+<li><p>Click File &gt; New &gt; Module From Existing Sources .. &gt; , Then go to <code class="docutils literal notranslate"><span class="pre">presto_cpp/java/presto-native-tests/pom.xml</span></code></p></li>
+</ol>
+<img alt="../_images/add_presto_cpp_to_presto.png" class="align-center" src="../_images/add_presto_cpp_to_presto.png" />
+<p>2. Now lets create the configuration for HiveExternalQueryRunner.
+We will need three env variables for this purpose, so copy the following below and replace the text in bold with your specific text.</p>
+<p>Env Variables: <code class="docutils literal notranslate"><span class="pre">PRESTO_SERVER=&lt;YOUR_PATH_TO_PRESTO_CPP&gt;/cmake-build-debug/presto_cpp/main/presto_server;DATA_DIR=/Users/&lt;YOUR_USER_NAME&gt;/Desktop;WORKER_COUNT=0</span></code></p>
+<p>VM Options:
+<code class="docutils literal notranslate"><span class="pre">-ea</span> <span class="pre">-Xmx2G</span> <span class="pre">-XX:+ExitOnOutOfMemoryError</span> <span class="pre">-Duser.timezone=America/Bahia_Banderas</span> <span class="pre">-Dhive.security=legacy</span></code></p>
+<p>Your run configuration should look something like below :</p>
+<img alt="../_images/run_configuration.png" class="align-center" src="../_images/run_configuration.png" />
+<dl class="simple">
+<dt>NOTE:</dt><dd><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">WORKER_COUNT</span></code> is the number of  workers to be launched along with the coordinator. In this case we put 0 as we want to externally launch our own CPP worker from CLion.</p></li>
+<li><p>Use classpath of module: presto-native-tests</p></li>
+<li><p>Launch the HiveExternalQueryRunner.</p></li>
+<li><p>Note discovery URI. Something like <code class="docutils literal notranslate"><span class="pre">http://127.0.0.1:54557</span></code>. Use the last discovery URI in the InteliJ logs</p></li>
+</ul>
+</dd>
+</dl>
+<img alt="../_images/ip_logs.png" class="align-center" src="../_images/ip_logs.png" />
+<ol class="arabic simple" start="3">
+<li><p>Update presto_cpp configuration:</p></li>
+</ol>
+<ol class="loweralpha simple">
+<li><p>Use discovery URI from the logs above and update the config.properties</p></li>
+</ol>
+<img alt="../_images/config_properties.png" class="align-center" src="../_images/config_properties.png" />
+<ol class="loweralpha simple" start="2">
+<li><p>Now create a run configuration for prestoserver like below:</p></li>
+</ol>
+<img alt="../_images/run_configuration2.png" class="align-center" src="../_images/run_configuration2.png" />
+<p>Note the program arguments are as below:
+<code class="docutils literal notranslate"><span class="pre">--logtostderr=1</span> <span class="pre">--v=1</span> <span class="pre">--etc_dir=/Users/&lt;PATH_TO_YOUR&gt;/presto_cpp</span></code></p>
+<p>Then start the presto_server executable. If all goes well you should see the server connect to the coordinator and see logs like so :</p>
+<img alt="../_images/connect_logs.png" class="align-center" src="../_images/connect_logs.png" />
+<ol class="arabic simple" start="4">
+<li><p>Run Presto CLI:</p></li>
+</ol>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span><span class="nb">cd</span><span class="w"> </span>presto/presto-cli/target<span class="w"> </span><span class="c1"># Java presto repo</span>
+$<span class="w"> </span>java<span class="w"> </span>-jar<span class="w"> </span>presto-cli-0.257-SNAPSHOT-executable.jar<span class="w"> </span>--catalog<span class="w"> </span>hive<span class="w"> </span>--schema<span class="w"> </span>tpch
+</pre></div>
+</div>
+<p>Note that 0.257 may change, pick the one exists in this directory
+You should be able to connect and run a query from the command line now.</p>
+</section>
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <div>
+    <h3><a href="../index.html">Table of Contents</a></h3>
+    <ul>
+<li><a class="reference internal" href="#">Presto Native Execution - Getting Started</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
+<li><a class="reference internal" href="#git-github">Git &amp; Github</a></li>
+<li><a class="reference internal" href="#java">Java</a></li>
+<li><a class="reference internal" href="#source-code">Source Code</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id1">Presto</a></li>
+<li><a class="reference internal" href="#setup-presto">Setup Presto</a></li>
+<li><a class="reference internal" href="#setup-intellij">Setup IntelliJ</a></li>
+<li><a class="reference internal" href="#setup-presto-cpp">Setup presto_cpp</a></li>
+<li><a class="reference internal" href="#setup-velox">Setup Velox</a></li>
+<li><a class="reference internal" href="#end-to-end-run">End to End Run</a><ul>
+<li><a class="reference internal" href="#make-changes-and-build">Make Changes and Build</a></li>
+<li><a class="reference internal" href="#add-presto-cpp-to-presto">Add presto_cpp to Presto</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  </div>
+  <div>
+    <h4>Previous topic</h4>
+    <p class="topless"><a href="perf-scan-agg.html"
+                          title="previous chapter">Performance Guide into TableScan and Aggregation</a></p>
+  </div>
+  <div>
+    <h4>Next topic</h4>
+    <p class="topless"><a href="orc-dump-output.html"
+                          title="next chapter">Sample output of an orcfiledump tool</a></p>
+  </div>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/develop/setup-install.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="orc-dump-output.html" title="Sample output of an orcfiledump tool"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="perf-scan-agg.html" title="Performance Guide into TableScan and Aggregation"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Presto Native Execution  documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../develop.html" >Developer Guide</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Presto Native Execution - Getting Started</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright TBD.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 6.1.3.
+    </div>
+  </body>
+</html>

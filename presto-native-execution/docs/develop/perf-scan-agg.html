@@ -1,0 +1,714 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+    <title>Performance Guide into TableScan and Aggregation &#8212; Presto Native Execution  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/nature.css" />
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/sphinx_highlight.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Presto Native Execution - Getting Started" href="setup-install.html" />
+    <link rel="prev" title="Developer Guide" href="../develop.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="setup-install.html" title="Presto Native Execution - Getting Started"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../develop.html" title="Developer Guide"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Presto Native Execution  documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../develop.html" accesskey="U">Developer Guide</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Performance Guide into TableScan and Aggregation</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="performance-guide-into-tablescan-and-aggregation">
+<h1>Performance Guide into TableScan and Aggregation<a class="headerlink" href="#performance-guide-into-tablescan-and-aggregation" title="Permalink to this heading">¶</a></h1>
+<section id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading">¶</a></h2>
+<p>In this guide I’ll explain how to investigate the performance of a scan +
+aggregation query that runs on Presto Native Execution, a next-generation
+Presto worker powered by Velox. After reading this guide you’ll know about
+the domain and remaining filters and how they differ, you’ll understand
+how to determine whether aggregation pushdown happens or not for a given
+query, you’ll have the tools to reproduce a production query in a unit test
+for quick debugging and profiling. You will also learn about special columns
+$path and $bucket and special table xxx$partition. The learnings from this
+guide can be applied to troubleshooting a failure or a crash as well.</p>
+</section>
+<section id="query-plan">
+<h2>Query Plan<a class="headerlink" href="#query-plan" title="Permalink to this heading">¶</a></h2>
+<p>Let’s look at a simple query (TPC-H #6):</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>
+<span class="w">    </span><span class="k">SUM</span><span class="p">(</span><span class="n">l</span><span class="p">.</span><span class="n">extendedprice</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">discount</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">revenue</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">lineitem</span><span class="w"> </span><span class="n">l</span>
+<span class="k">WHERE</span>
+<span class="w">    </span><span class="n">l</span><span class="p">.</span><span class="n">shipdate</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="k">CAST</span><span class="p">(</span><span class="nb">DATE</span><span class="w"> </span><span class="s1">&#39;1994-01-01&#39;</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">)</span>
+<span class="w">    </span><span class="k">AND</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">shipdate</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="k">CAST</span><span class="p">(</span><span class="nb">DATE</span><span class="w"> </span><span class="s1">&#39;1994-01-01&#39;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">INTERVAL</span><span class="w"> </span><span class="s1">&#39;1&#39;</span><span class="w"> </span><span class="k">YEAR</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">)</span>
+<span class="w">    </span><span class="k">AND</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">discount</span><span class="w"> </span><span class="k">BETWEEN</span><span class="w"> </span><span class="p">.</span><span class="mi">06</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">01</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">.</span><span class="mi">06</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">01</span>
+<span class="w">    </span><span class="k">AND</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">quantity</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">24</span>
+</pre></div>
+</div>
+<p>The first step is to check the query plan. You can generate the plan by running
+the EXPLAIN command using Presto client. EXPLAIN command
+takes an optional parameter which specifies whether to produce a logical or
+distributed query plan. The distributed plan is the logical plan broken down
+into fragments (or stages).</p>
+<p>Note: In Presto, the terms Fragment and Stage are used to refer to the same
+thing. These terms are interchangeable.</p>
+<p>Note: You can find out more about EXPLAIN command in Presto documentation at
+<a class="reference external" href="https://prestodb.io/docs/current/sql/explain.html">https://prestodb.io/docs/current/sql/explain.html</a></p>
+<p>Let’s generate a distributed query plan for the query above:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">EXPLAIN</span><span class="w"> </span><span class="p">(</span><span class="k">TYPE</span><span class="w"> </span><span class="n">distributed</span><span class="p">)</span><span class="w"> </span><span class="o">&lt;</span><span class="n">query</span><span class="w"> </span><span class="nb">text</span><span class="o">&gt;</span>
+</pre></div>
+</div>
+<p>This gives us the following:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Fragment 0 [SINGLE]
+    Output layout: [sum]
+    Output partitioning: SINGLE []
+    Stage Execution Strategy: UNGROUPED_EXECUTION
+    - Output[revenue] =&gt; [sum:double]
+            Estimates: {rows: 10000 (87.89kB), cpu: ?, memory: ?, network: ?}
+            revenue := sum
+        - Limit[10000] =&gt; [sum:double]
+                Estimates: {rows: 10000 (87.89kB), cpu: ?, memory: ?, network: ?}
+            - Aggregate(FINAL) =&gt; [sum:double]
+                    sum := &quot;presto.default.sum&quot;((sum_4))
+                - LocalExchange[SINGLE] () =&gt; [sum_4:double]
+                    - RemoteSource[1] =&gt; [sum_4:double]
+
+Fragment 1 [SOURCE]
+    Output layout: [sum_4]
+    Output partitioning: SINGLE []
+    Stage Execution Strategy: UNGROUPED_EXECUTION
+    - Aggregate(PARTIAL) =&gt; [sum_4:double]
+            sum_4 := &quot;presto.default.sum&quot;((expr))
+        - ScanProject[table = TableHandle {connectorId=hive, connectorHandle=&#39;HiveTableHandle{schemaName=tpch, tableName=lineitem, analyzePartitionValues=Optional.empty}&#39;, layout=&#39;Optional[lineitem{domains={shipdate=[ [[&quot;1994-01-01&quot;, &quot;1995-01-01&quot;)] ], discount=[ [[&quot;0.049999999999999996&quot;, &quot;0.06999999999999999&quot;]] ], quantity=[ [(&lt;min&gt;, &quot;24.0&quot;)] ]}}]&#39;}, grouped = false, projectLocality = LOCAL] =&gt; [expr:double]
+                Estimates: {rows: 53987447 (463.38MB), cpu: 971774042.40, memory: 0.00, network: 0.00}/{rows: 53987447 (463.38MB), cpu: 1457661063.60, memory: 0.00, network: 0.00}
+                expr := (extendedprice) * (discount)
+                LAYOUT: lineitem{domains={shipdate=[ [[&quot;1994-01-01&quot;, &quot;1995-01-01&quot;)] ], discount=[ [[&quot;0.049999999999999996&quot;, &quot;0.06999999999999999&quot;]] ], quantity=[ [(&lt;min&gt;, &quot;24.0&quot;)] ]}}
+                discount := discount:double:6:REGULAR
+                    :: [[&quot;0.049999999999999996&quot;, &quot;0.06999999999999999&quot;]]
+                extendedprice := extendedprice:double:5:REGULAR
+                shipdate:string:10:REGULAR
+                    :: [[&quot;1994-01-01&quot;, &quot;1995-01-01&quot;)]
+                quantity:double:4:REGULAR
+                    :: [(&lt;min&gt;, &quot;24.0&quot;)]
+</pre></div>
+</div>
+<p>This query plan has 2 sections - <strong>Fragment 0 [SINGLE]</strong> followed by <strong>Fragment
+1[SOURCE]</strong> - corresponding to 2 stages of the query. Notice that stages are
+listed in the opposite order of execution, e.g. leaf stage where execution
+starts appears last. The words [SINGLE] and [SOURCE] in the fragment heading
+tell us how wide the stage is running. SINGLE means that the stage runs on a
+single node. SOURCE means that the stage runs on all nodes in the cluster.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Session property max_tasks_per_stage or configuration property
+stage.max-tasks-per-stage can be used to limit the number of nodes used in a
+SOURCE stage.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You can find session properties in SystemSessionProperties.java file in
+presto-main module. The corresponding configuration properties can be found in
+QueryManagerConfig.java, TaskManagerConfig.java, MemoryManagerConfig.java,
+FeaturesConfig.java, NodeMemoryConfig.java and WarningCollectorConfig.java
+files in the same module.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Session properties can be used to modify behavior for a single query.
+Config properties specify behavior for all queries running in a given cluster.
+Most configuration properties have corresponding session properties, but some
+don’t. This is the case for properties which cannot be modified at runtime due
+to technical reasons.</p>
+</div>
+<p>For interactive queries, it is usually the case that all the time is spent
+processing the leaf stage. That’s because interactive queries tend to be
+cardinality reducing either through selective filtering or low-cardinality
+aggregation or both. Let’s take a closer look at the leaf stage plan.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Fragment 1 [SOURCE]
+    Output layout: [sum_4]
+    Output partitioning: SINGLE []
+    Stage Execution Strategy: UNGROUPED_EXECUTION
+    - Aggregate(PARTIAL) =&gt; [sum_4:double]
+            sum_4 := &quot;presto.default.sum&quot;((expr))
+        - ScanProject[table = TableHandle {connectorId=hive, connectorHandle=&#39;HiveTableHandle{schemaName=tpch, tableName=lineitem, analyzePartitionValues=Optional.empty}&#39;, layout=&#39;Optional[lineitem{domains={shipdate=[ [[&quot;1994-01-01&quot;, &quot;1995-01-01&quot;)] ], discount=[ [[&quot;0.049999999999999996&quot;, &quot;0.06999999999999999&quot;]] ], quantity=[ [(&lt;min&gt;, &quot;24.0&quot;)] ]}}]&#39;}, grouped = false, projectLocality = LOCAL] =&gt; [expr:double]
+                Estimates: {rows: 53987447 (463.38MB), cpu: 971774042.40, memory: 0.00, network: 0.00}/{rows: 53987447 (463.38MB), cpu: 1457661063.60, memory: 0.00, network: 0.00}
+                expr := (extendedprice) * (discount)
+                LAYOUT: lineitem{domains={shipdate=[ [[&quot;1994-01-01&quot;, &quot;1995-01-01&quot;)] ], discount=[ [[&quot;0.049999999999999996&quot;, &quot;0.06999999999999999&quot;]] ], quantity=[ [(&lt;min&gt;, &quot;24.0&quot;)] ]}}
+                discount := discount:double:6:REGULAR
+                    :: [[&quot;0.049999999999999996&quot;, &quot;0.06999999999999999&quot;]]
+                extendedprice := extendedprice:double:5:REGULAR
+                shipdate:string:10:REGULAR
+                    :: [[&quot;1994-01-01&quot;, &quot;1995-01-01&quot;)]
+                quantity:double:4:REGULAR
+                    :: [(&lt;min&gt;, &quot;24.0&quot;)]
+</pre></div>
+</div>
+<p>There are two plan nodes: ScanProject and partial Aggregation. ScanProject
+represents two separate operators: TableScan and FilterProject. Aggregation
+node represents a single operator. Hence, there are 3 operators: TableScan -&gt;
+FilterProject -&gt; Aggregation. Notice that just like fragments, plan nodes /
+operators are listed in the opposite order of execution. ScanProject plan node
+where execution starts is listed last.</p>
+<p>The Aggregation node shows that there is a single aggregate function, SUM,
+applied to column “expr”.</p>
+<blockquote>
+<div><p>sum_4 := “presto.default.sum”((expr))</p>
+</div></blockquote>
+<p>Column “expr” is produced by FilterProject operator by evaluating an expression
+over columns produced by TableScan operator:</p>
+<blockquote>
+<div><p>expr := (extendedprice) * (discount)</p>
+</div></blockquote>
+<p>ScanProject node contains a lot of information. First, it shows that we are
+using hive connector:</p>
+<blockquote>
+<div><p>TableHandle {<strong>connectorId=hive</strong>,</p>
+</div></blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>It is important to note the connector name as it must be used when
+specifying connector-specific session properties. For example, Hive-specific
+max_split_size session property must be specified as
+&lt;connector-name&gt;.max_split_size, e.g. hive.max_split_size.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You can find Hive-specific session properties in
+HiveSessionProperties.java in the presto-hive module and corresponding
+configuration properties in HiveClientConfig.java in the same module.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You can check session properties in-effect using SHOW SESSION command.</p>
+</div>
+<p>Next, the ScanProject node shows the connector handle which includes the schema,
+table name and other properties that are out of scope of this guide.</p>
+<blockquote>
+<div><dl class="simple">
+<dt>connectorHandle=’HiveTableHandle{</dt><dd><p>schemaName=tpch,
+tableName=lineitem,
+analyzePartitionValues=Optional.empty}’</p>
+</dd>
+</dl>
+</div></blockquote>
+<p>We see that TableScan is reading from lineitem table in tpch schema. Further,
+ScanProject node shows the layout which repeats the table name we already saw
+in the connector handle and adds a new property: “domains”. The terms here are
+non-intuitive - layout, domain - but the information is useful. Domains
+property describes the simple filters applied to individual columns. These
+filters are pushed deep into the ORC reader and are evaluated as part of
+decoding the data from the ORC streams. These can be evaluated very
+efficiently.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>layout=&#39;Optional[lineitem{
+    domains={
+        shipdate=[ [[&quot;1994-01-01&quot;, &quot;1995-01-01&quot;)] ],
+        discount=[ [[&quot;0.049999999999999996&quot;, &quot;0.06999999999999999&quot;]] ],
+        quantity=[ [(&lt;min&gt;, &quot;24.0&quot;)] ]}}]&#39;}
+</pre></div>
+</div>
+<p>There are 3 filters on columns “shipdate”, “discount” and “quantity”. The filter
+on column “quantity” correspond to the “l.shipdate &gt;= CAST(DATE ‘1994-01-01’ AS
+VARCHAR) AND l.shipdate &lt; CAST(DATE ‘1994-01-01’ + INTERVAL ‘1’ YEAR AS
+VARCHAR)” expression. The filter on column “discount” corresponds to
+the “l.discount BETWEEN .06 - 0.01 AND .06 + 0.01” expression. The filter on
+column “quantity” corresponds to the “l.quantity &lt; 24” expression.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>In Velox, these filters are represented by Filter classes defined in
+velox/type/Filter.h and applied by SelectiveColumnReader defined in
+velox/dwio/dwrf/reader/SelectiveColumnReader.h .</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>In Velox, SubfieldFilters is a map of filters keyed on Subfield which
+represents the column name. Velox uses Subfield class and not std::string or
+similar for the column name because a filter can apply to a nested column in a
+struct or an element of an array or map. In these cases, having a more
+structured representation of the “column” is helpful. An example of such a
+filter would be a.b.c = 5 or a[5] &lt; 10 or m[“cats”] &gt; 100.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>In the Java codebase, these filters are represented by TupleDomainFilter
+classes.</p>
+</div>
+<p>What kind of filters should one expect to appear in the “domains” property? A
+filter qualifies if (1) it applies to a single column or subfield of scalar
+type, e.g. not a map, array or struct; (2) it can be represented as a final set
+of disjoint ranges of values. These filters are therefore sometimes called
+range filters. Here are some examples for an integer column. These trivially
+extend to floating point columns, strings and booleans.</p>
+<a class="reference internal image-reference" href="../_images/range-filters.png"><img alt="../_images/range-filters.png" class="align-center" src="../_images/range-filters.png" style="width: 500px;" /></a>
+<p>ScanProject node header concludes with the list of columns projected out of the
+operator. In this query, ScanProject projects out a single column “expr” of
+type DOUBLE.</p>
+<blockquote>
+<div><p>… =&gt; [expr:double]</p>
+</div></blockquote>
+<p>The rest of the information in the ScanProject node is a list of columns used
+by the operator. First come regular columns, followed by partition keys. For
+each column, there is column name and type, e.g discount:double.</p>
+<blockquote>
+<div><dl class="simple">
+<dt><strong>discount</strong> := discount:double:6:REGULAR</dt><dd><p>:: [[“0.049999999999999996”, “0.06999999999999999”]]</p>
+</dd>
+</dl>
+<p><strong>extendedprice</strong> := extendedprice:double:5:REGULAR</p>
+<dl class="simple">
+<dt><strong>shipdate</strong>:string:10:REGULAR</dt><dd><p>:: [[“1994-01-01”, “1995-01-01”)]</p>
+</dd>
+<dt><strong>quantity</strong>:double:4:REGULAR</dt><dd><p>:: [(&lt;min&gt;, “24.0”)]</p>
+</dd>
+</dl>
+</div></blockquote>
+<p>If we turn lineitem into a partition table with partition keys shipdate and
+shipmode, ScanProject node will show all partition keys with a list of values
+that apply to this specific query. This can be used to find out how many total
+partitions are read by multiplying the number of values for each partition key.
+Here we have 7 values for partition key “shipmode” and 366 values
+for “shipdate”.  There are a total of 7 * 366 = 2562 partitions accessed by the
+query.</p>
+<blockquote>
+<div><dl class="simple">
+<dt><strong>shipdate</strong>:string:-13:PARTITION_KEY</dt><dd><p>:: [[“1994-01-01”], [“1994-01-02”],…]</p>
+</dd>
+<dt><strong>shipmode</strong>:string:-14:PARTITION_KEY</dt><dd><p>:: [[“AIR”], [“FOB”], [“MAIL”], [“RAIL”], [“REG AIR”], [“SHIP”], [“TRUCK”]]</p>
+</dd>
+</dl>
+</div></blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The calculation of the total number of partitions is an approximation as
+not all combinations of the partition key values might exist.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Partition pruning happens on the coordinator. The workers never see
+partitions not listed in the query plan.</p>
+</div>
+<p>When a query under investigation accesses multiple partitions, it is often
+helpful to modify the query to access a single partition. You can do so by
+adding equality filters for all the partition keys using values from the query
+plan. For example, our query can be modified like this:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>
+<span class="w">    </span><span class="k">SUM</span><span class="p">(</span><span class="n">l</span><span class="p">.</span><span class="n">extendedprice</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">discount</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">revenue</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">lineitem</span><span class="w"> </span><span class="n">l</span>
+<span class="k">WHERE</span>
+<span class="w">    </span><span class="n">l</span><span class="p">.</span><span class="n">shipdate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;1994-01-01&#39;</span>
+<span class="w">    </span><span class="k">AND</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">shipmode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;AIR&#39;</span>
+<span class="w">    </span><span class="k">AND</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">discount</span><span class="w"> </span><span class="k">BETWEEN</span><span class="w"> </span><span class="p">.</span><span class="mi">06</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">01</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">.</span><span class="mi">06</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">01</span>
+<span class="w">    </span><span class="k">AND</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">quantity</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">24</span>
+</pre></div>
+</div>
+<p>You can use a special table xxx$partitions to query all the partitions in
+a given table. For example,</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>
+<span class="w">  </span><span class="o">*</span>
+<span class="k">FROM</span>
+<span class="w">  </span><span class="ss">&quot;lineitem.$partitions&quot;</span>
+<span class="k">WHERE</span>
+<span class="w">  </span><span class="n">shipdate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;1994-01-01&#39;</span>
+</pre></div>
+</div>
+<p>This query returns a list of all partitions with partition key “shipdate” equal
+to “1994-01-01”:</p>
+<a class="reference internal image-reference" href="../_images/partitions.png"><img alt="../_images/partitions.png" class="align-center" src="../_images/partitions.png" style="width: 600px;" /></a>
+</section>
+<section id="statistics-based-pruning">
+<h2>Statistics-Based Pruning<a class="headerlink" href="#statistics-based-pruning" title="Permalink to this heading">¶</a></h2>
+<p>Range (or TupleDomain) filters are used to prune whole files and sections of
+files during execution. ORC files contain basic statistics about column values,
+such as minimum and maximum values and presence of nulls. These statistics are
+available for the whole file as well as for sections of the file called
+rowgroups or strides. Check out <a class="reference external" href="https://orc.apache.org/specification/">https://orc.apache.org/specification/</a> to learn
+more about the ORC format.</p>
+<p>There is a special column “$path” that can be used to query file paths accessed
+by the query. For each row the “$path” column reports the path of the file
+containing that row. For example,</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>
+<span class="w">    </span><span class="ss">&quot;$path&quot;</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">lineitem</span>
+<span class="k">WHERE</span>
+<span class="w">    </span><span class="n">shipdate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;1994-01-10&#39;</span>
+<span class="k">LIMIT</span>
+<span class="w">    </span><span class="mi">5</span>
+</pre></div>
+</div>
+<p>This query returns file paths that look like this:</p>
+<blockquote>
+<div><p>…/shipdate=1994-01-10/shipmode=AIR/20210814_094649_15363_c5483_c7ba49d3-b1e7-4bf4-8dd7-1a08ef80c9a3</p>
+</div></blockquote>
+<p>Notice <strong>shipdate=1994-01-10/shipmode=AIR</strong> subdirectory which corresponds to
+partition keys. Each partition is stored in a separate directory, hence, all
+files in a given partition will come from the same directory. Given a file path
+you can identify the partition by looking at the partition key values in the
+path.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>$path columns are generated on the fly by the HiveConnector.</p>
+</div>
+<p>When troubleshooting, it is often helpful to reduce the query to a single file.
+You can do so by querying the files in a given partition and
+adding “$path”=”…” filter to the query. For example,</p>
+<p>You can check out the file- and rowgroup-level statistics for a given file using
+the orc-statistics or orcfiledump tool:</p>
+<blockquote>
+<div><p>hive –orcfiledump -d &lt;path_to_file&gt;</p>
+<p>orc-statistics [–withIndex] &lt;filename&gt;</p>
+</div></blockquote>
+<p>Here is an <a class="reference internal" href="orc-dump-output.html"><span class="doc">example of the output of this command</span></a>.</p>
+<p>In this query we have filters on columns discount and quantity. Let’s look at
+the statistics for these columns. First section of the output is listing all
+the columns in the file along with their internal IDs. Searching for discount
+and quantity produces two entries:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Field 5, Column 4, Name: quantity, Type: DOUBLE
+Field 7, Column 6, Name: discount, Type: DOUBLE
+</pre></div>
+</div>
+<p>The quantity column has ID 5; discount column has ID 7. We’ll use these IDs to
+look up file-level statistics next.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>FileStats:
+Stats 0: values: 953, has null: false, size: Missing, raw size: Missing
+  Stats 5: values: 953, has null: false, size: Missing, raw size: Missing, 1.0 -&gt; 50.0, hasSum: false
+  Stats 7: values: 953, has null: false, size: Missing, raw size: Missing, 0.0 -&gt; 0.1, hasSum: false
+</pre></div>
+</div>
+<p>Stats 5 line shows statistics for column “quantity”. There are 953 non-null
+values in the [1.0, 50.0] range. Stats 7 line shows statistics for
+column “discount”: 953 non-null values in the [0.0, 0.1] range.</p>
+<p>If the query had a quantity &gt; 50 filter, we could determine that no row in this
+file can pass the filter and skip reading the file after examining the
+statistics. This is what HiveConnector is doing internally. See testFilters
+function in f4d/connectors/hive/HiveConnector.cpp.</p>
+<p>If file-level statistics do not allow us to exclude all rows in the file from
+the query processing, we proceed to check rowgroup-level statistics to see if
+we can skip some of these.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Row-group skipping based on stats is implemented in filterRowGroups method
+of the SelectiveColumnReader.</p>
+</div>
+<p>Finally, it is worth mentioning another two pieces of useful information found
+in the output of the orcfiledump tool: total number of rows in the file and the
+system that produced the file. The number of rows appears at the top of the
+file. The information about the producer is at the bottom.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Number of rows: 953
+
+UserMetadata:
+        presto.writer.version -&gt;  0.259.1-a8dc52e
+        orc.writer.version -&gt;  1
+        presto_query_id -&gt;  20210319_083036_17635_2j3mt
+        orc.writer.name -&gt;  presto
+        presto_version -&gt;  0.259
+</pre></div>
+</div>
+</section>
+<section id="remaining-filter">
+<h2>Remaining Filter<a class="headerlink" href="#remaining-filter" title="Permalink to this heading">¶</a></h2>
+<p>Not all filters are range filters. Let’s look at a different query that features
+a non-range filter.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>
+<span class="w">    </span><span class="n">linenumber</span><span class="p">,</span>
+<span class="w">    </span><span class="n">orderkey</span><span class="p">,</span>
+<span class="w">    </span><span class="n">tax</span><span class="p">,</span>
+<span class="w">    </span><span class="n">extendedprice</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">lineitem</span>
+<span class="k">WHERE</span>
+<span class="w">    </span><span class="n">tax</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">extendedprice</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">5000</span><span class="p">.</span><span class="mi">0</span>
+</pre></div>
+</div>
+<p>Let’s start again with a query plan, in particular, the leaf stage.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Fragment 1 [SOURCE]
+    Output layout: [orderkey, linenumber, extendedprice, tax]
+    Output partitioning: SINGLE []
+    Stage Execution Strategy: UNGROUPED_EXECUTION
+    - LimitPartial[10000] =&gt; [orderkey:bigint, linenumber:integer, extendedprice:double, tax:double]
+            Estimates: {rows: 10000 (312.50kB), cpu: 1727918297.60, memory: 0.00, network: 0.00}
+        - TableScan[TableHandle {connectorId=’hive’, connectorHandle=&#39;HiveTableHandle{schemaName=tpch, tableName=lineitem, analyzePartitionValues=Optional.empty}&#39;, layout=&#39;Optional[tpch.lineitem{filter=((tax) * (extendedprice)) &gt; (DOUBLE&#39;5000.0&#39;)}]&#39;}, grouped = false] =&gt; [orderkey:bigint, linenumber:integer, extendedprice:double, tax:double]
+                Estimates: {rows: 53987447 (1.61GB), cpu: 1727598297.60, memory: 0.00, network: 0.00}
+                LAYOUT: tpch.lineitem{filter=((tax) * (extendedprice)) &gt; (DOUBLE&#39;5000.0&#39;)}
+                orderkey := orderkey:bigint:0:REGULAR
+                tax := tax:double:7:REGULAR
+                linenumber := linenumber:int:3:REGULAR
+                extendedprice := extendedprice:double:5:REGULAR
+</pre></div>
+</div>
+<p>The layout section of the TableScan operator includes a new field: filter.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>LAYOUT: tpch.lineitem{filter=((tax) * (extendedprice)) &gt; (DOUBLE&#39;5000.0&#39;)}
+</pre></div>
+</div>
+<p>This filter corresponds to the SQL expression “tax * extendedprice &gt; 5000.0”.
+This expression depends on two columns, hence, cannot be represented as a
+domain or range filter and cannot be pushed down into the ORC reader.</p>
+<p>This filter is called the remaining filter, e.g. the filter remaining after
+extracting all the range filters, and is evaluated by the HiveConnector on rows
+remaining after all the range filters have been applied by the ORC reader.</p>
+<p>The evaluation of the remaining filter in HiveConnector uses the same expression
+evaluation engine as filters and projections evaluated as part of the
+FilterProject operator. Hence, adaptive filter reordering is applied to
+individual conjuncts. See ConjunctExpr::maybeReorderInputs in
+f4d/exec/ControlExpr.cpp.</p>
+<p>Note: SelectiveColumnReader also includes adaptive filter reordering for the
+range filters. See ScanSpec::reorder in f4d/dwio/dwrf/reader/ScanSpec.cpp.</p>
+<p>The results of evaluating a remaining filter are represented using dictionary
+encoding. All the columns projected out of the TableScan operator are wrapped
+into a dictionary with indices pointing to rows that passed the filter. The
+dictionary wrapping is omitted if all rows pass.</p>
+</section>
+<section id="lazy-vector">
+<h2>Lazy Vector<a class="headerlink" href="#lazy-vector" title="Permalink to this heading">¶</a></h2>
+<p>In the TableScan operator, columns that are not used in any filter are projected
+out as LazyVectors. LazyVector is a special kind of vector that doesn’t get
+materialized until first use. If it never gets used it will never materialize.
+When it is used, it is materialized only for a subset of needed rows.</p>
+<p>Internally, LazyVector contains a function to load the rows when needed and a
+set of rows to load. This is the set of rows that passed all the range filters.
+If there is a remaining filter, the LazyVector will come out of the TableScan
+wrapped in a dictionary.</p>
+<p>LazyVector allows to delay materialization and reduce the number of rows
+materialized to a set of absolutely needed values. For example, the number of
+rows can be reduced further by a selective join. The idea comes from LazyBlock
+in classic Presto, but Velox extends it further and leverages LazyVector to
+implement aggregation pushdown.</p>
+<p>You may wonder whether it is inefficient to read individual columns one at a
+time instead of reading all columns at once. The answer is no. The ORC reader
+has logic to coalesce nearby reads, e.g. it knows all the sections of the file
+it may need to read. When it reads one section it reads sections which are
+close-enough as well.</p>
+</section>
+<section id="aggregation-pushdown">
+<h2>Aggregation Pushdown<a class="headerlink" href="#aggregation-pushdown" title="Permalink to this heading">¶</a></h2>
+<p>Aggregation pushdown into TableScan is implemented using LazyVector. Pushdown
+applies to different aggregates independently. In a single Aggregation operator
+some aggregates may use the pushdown and some may not. The pushdown is enabled
+if (1) aggregation function supports it; (2) aggregation function applies to a
+single column that is not used in any other aggregation function, a filter or
+projection.</p>
+<p>For example, aggregation pushdown is enabled in the following query. Here we
+have a single aggregation function “sum” over a single column “quantity”. Sum
+supports aggregation pushdown and “quantity” is not used anywhere else.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>
+<span class="w">  </span><span class="k">SUM</span><span class="p">(</span><span class="n">quantity</span><span class="p">)</span>
+<span class="k">FROM</span>
+<span class="w">  </span><span class="n">lineitem</span>
+<span class="k">WHERE</span>
+<span class="w">  </span><span class="n">shipdate</span><span class="w"> </span><span class="k">between</span><span class="w"> </span><span class="s1">&#39;1994-01-01&#39;</span><span class="w"> </span><span class="k">and</span><span class="w"> </span><span class="s1">&#39;1994-12-31&#39;</span>
+</pre></div>
+</div>
+<p>When aggregation pushdown is enabled, the aggregate function loads LazyBlock by
+supplying a value hook which adds values extracted from the ORC stream into the
+accumulator directly. No vector is produced in the process and we save on
+allocating memory and copying data. In this case the CPU time used to extract
+the values from the ORC stream is counted towards the Aggregation operator, not
+TableScan operator.</p>
+<p>Aggregation pushdown doesn’t apply in the TPC-H Q6 query we looked at earlier
+because SUM is applied to the result of a projection: “extendedprice *
+discount”.</p>
+</section>
+<section id="performance-investigation">
+<h2>Performance Investigation<a class="headerlink" href="#performance-investigation" title="Permalink to this heading">¶</a></h2>
+<p>When investigating performance of a query, first check that all the possible
+file and rowgroup pruning occurs. No matter how fast the data processing is,
+you can’t beat the speed of doing nothing.</p>
+<p>Next, pick a few file paths for deeper investigation. Make sure the selectivity
+of the query on these files matches the average, e.g. don’t pick outliers. Once
+you have a handful of files, copy these from storage to local disk.</p>
+<p>Then, write a unit test to run the leaf stage of the query on the file you
+copied. It is convenient to use velox/exec/tests/TableScanTest.cpp as a base.
+Let’s write a repro for the TPC-H #6 query we looked at.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>
+<span class="w">    </span><span class="k">SUM</span><span class="p">(</span><span class="n">l</span><span class="p">.</span><span class="n">extendedprice</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">discount</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">revenue</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">lineitem</span><span class="w"> </span><span class="n">l</span>
+<span class="k">WHERE</span>
+<span class="w">    </span><span class="n">l</span><span class="p">.</span><span class="n">shipdate</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="k">CAST</span><span class="p">(</span><span class="nb">DATE</span><span class="w"> </span><span class="s1">&#39;1994-01-01&#39;</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">)</span>
+<span class="w">    </span><span class="k">AND</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">shipdate</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="k">CAST</span><span class="p">(</span><span class="nb">DATE</span><span class="w"> </span><span class="s1">&#39;1994-01-01&#39;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">INTERVAL</span><span class="w"> </span><span class="s1">&#39;1&#39;</span><span class="w"> </span><span class="k">YEAR</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">)</span>
+<span class="w">    </span><span class="k">AND</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">discount</span><span class="w"> </span><span class="k">BETWEEN</span><span class="w"> </span><span class="p">.</span><span class="mi">06</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">01</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">.</span><span class="mi">06</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">01</span>
+<span class="w">    </span><span class="k">AND</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">quantity</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">24</span>
+</pre></div>
+</div>
+<p>First, note that we don’t need filters on partition keys. These are applied on
+the coordinator during partition pruning. Hence, we can drop the filter
+on “shipdate” from our repro. We have two filters remaining: discount
+BETWEEN .06 - 0.01 AND .06 + 0.01 and quantity &lt; 24. We also have a
+projection - extendedprice * discount - and sum aggregation over projected
+column.</p>
+<p>We can use SubfieldFiltersBuilder to build range filters. Method names in this
+class are self-explanatory:</p>
+<div class="highlight-c++ notranslate"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">filters</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SubfieldFiltersBuilder</span><span class="p">()</span>
+<span class="w">     </span><span class="p">.</span><span class="n">add</span><span class="p">(</span><span class="s">&quot;discount&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">between</span><span class="p">(</span><span class="mf">0.06</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mf">0.01</span><span class="p">,</span><span class="w"> </span><span class="mf">.06</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mf">0.01</span><span class="p">))</span>
+<span class="w">     </span><span class="p">.</span><span class="n">add</span><span class="p">(</span><span class="s">&quot;quantity&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">lessThan</span><span class="p">(</span><span class="mi">24</span><span class="p">))</span>
+<span class="w">     </span><span class="p">.</span><span class="n">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>We can then use PlanBuilder to build the plan, TableScan followed by
+FilterProject followed by global partial Aggregation:</p>
+<div class="highlight-c++ notranslate"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">rowType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ROW</span><span class="p">({</span><span class="s">&quot;extendedprice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;discount&quot;</span><span class="p">},</span><span class="w"> </span><span class="p">{</span><span class="n">DOUBLE</span><span class="p">(),</span><span class="w"> </span><span class="n">DOUBLE</span><span class="p">()});</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">assignments</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">allRegularColumns</span><span class="p">(</span><span class="n">rowType</span><span class="p">);</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tableHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">makeTableHandle</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">filters</span><span class="p">));</span>
+
+<span class="k">auto</span><span class="w"> </span><span class="n">op</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlanBuilder</span><span class="p">()</span>
+<span class="w">              </span><span class="p">.</span><span class="n">tableScan</span><span class="p">(</span><span class="n">rowType</span><span class="p">,</span><span class="w"> </span><span class="n">tableHandle</span><span class="p">,</span><span class="w"> </span><span class="n">assignments</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">project</span><span class="p">({</span><span class="s">&quot;extendedprice * discount&quot;</span><span class="p">},</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;expr&quot;</span><span class="p">})</span>
+<span class="w">              </span><span class="p">.</span><span class="n">partialAggregation</span><span class="p">({},</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;sum(expr)&quot;</span><span class="p">})</span>
+<span class="w">              </span><span class="p">.</span><span class="n">planNode</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Finally, we use the makeHiveSplit method to create a split from a file path. The
+complete test looks like this:</p>
+<div class="highlight-c++ notranslate"><div class="highlight"><pre><span></span><span class="n">TEST_F</span><span class="p">(</span><span class="n">TableScanTest</span><span class="p">,</span><span class="w"> </span><span class="n">repro</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">filePath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/tmp/repro.dwrf&quot;</span><span class="p">;</span>
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">filters</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SubfieldFiltersBuilder</span><span class="p">()</span>
+<span class="w">                     </span><span class="p">.</span><span class="n">add</span><span class="p">(</span><span class="s">&quot;discount&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">between</span><span class="p">(</span><span class="mf">0.06</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mf">0.01</span><span class="p">,</span><span class="w"> </span><span class="mf">.06</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mf">0.01</span><span class="p">))</span>
+<span class="w">                     </span><span class="p">.</span><span class="n">add</span><span class="p">(</span><span class="s">&quot;quantity&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">lessThan</span><span class="p">(</span><span class="mi">24</span><span class="p">))</span>
+<span class="w">                     </span><span class="p">.</span><span class="n">build</span><span class="p">();</span>
+
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">rowType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ROW</span><span class="p">({</span><span class="s">&quot;extendedprice&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;discount&quot;</span><span class="p">},</span><span class="w"> </span><span class="p">{</span><span class="n">DOUBLE</span><span class="p">(),</span><span class="w"> </span><span class="n">DOUBLE</span><span class="p">()});</span>
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">assignments</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">allRegularColumns</span><span class="p">(</span><span class="n">rowType</span><span class="p">);</span>
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">tableHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">makeTableHandle</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">filters</span><span class="p">));</span>
+
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">op</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlanBuilder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="n">tableScan</span><span class="p">(</span><span class="n">rowType</span><span class="p">,</span><span class="w"> </span><span class="n">tableHandle</span><span class="p">,</span><span class="w"> </span><span class="n">assignments</span><span class="p">)</span>
+<span class="w">      </span><span class="p">.</span><span class="n">project</span><span class="p">({</span><span class="s">&quot;extendedprice * discount&quot;</span><span class="p">},</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;expr&quot;</span><span class="p">})</span>
+<span class="w">                </span><span class="p">.</span><span class="n">partialAggregation</span><span class="p">({},</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;sum(expr)&quot;</span><span class="p">})</span>
+<span class="w">                </span><span class="p">.</span><span class="n">planNode</span><span class="p">();</span>
+
+<span class="w">  </span><span class="n">CursorParameters</span><span class="w"> </span><span class="n">params</span><span class="p">;</span>
+<span class="w">  </span><span class="n">params</span><span class="p">.</span><span class="n">planNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">op</span><span class="p">;</span>
+
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">start</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">chrono</span><span class="o">::</span><span class="n">steady_clock</span><span class="o">::</span><span class="n">now</span><span class="p">();</span>
+
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">cursor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">TaskCursor</span><span class="o">&gt;</span><span class="p">(</span><span class="n">params</span><span class="p">);</span>
+<span class="w">  </span><span class="n">cursor</span><span class="o">-&gt;</span><span class="n">task</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">addSplit</span><span class="p">(</span><span class="s">&quot;0&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">makeHiveSplit</span><span class="p">(</span><span class="n">filePath</span><span class="p">));</span>
+<span class="w">  </span><span class="n">cursor</span><span class="o">-&gt;</span><span class="n">task</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">noMoreSplits</span><span class="p">(</span><span class="s">&quot;0&quot;</span><span class="p">);</span>
+
+<span class="w">  </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">totalCnt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="w">  </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">cursor</span><span class="o">-&gt;</span><span class="n">moveNext</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">totalCnt</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="n">cursor</span><span class="o">-&gt;</span><span class="n">current</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">();</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">end</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">chrono</span><span class="o">::</span><span class="n">steady_clock</span><span class="o">::</span><span class="n">now</span><span class="p">();</span>
+
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;Total: &quot;</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">totalCnt</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;Time: &quot;</span>
+<span class="w">            </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">chrono</span><span class="o">::</span><span class="n">duration_cast</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">chrono</span><span class="o">::</span><span class="n">milliseconds</span><span class="o">&gt;</span><span class="p">(</span>
+<span class="w">                   </span><span class="n">end</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">start</span><span class="p">)</span>
+<span class="w">                   </span><span class="p">.</span><span class="n">count</span><span class="p">()</span>
+<span class="w">            </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;ms&quot;</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>If the file is too short, we can always make duplicate splits and add them in a
+loop:</p>
+<div class="highlight-c++ notranslate"><div class="highlight"><pre><span></span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">100</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">cursor</span><span class="o">-&gt;</span><span class="n">task</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">addSplit</span><span class="p">(</span><span class="s">&quot;0&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">makeHiveSplit</span><span class="p">(</span><span class="n">filePath</span><span class="p">));</span>
+<span class="p">}</span>
+<span class="n">cursor</span><span class="o">-&gt;</span><span class="n">task</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">noMoreSplits</span><span class="p">(</span><span class="s">&quot;0&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>We can now run this test under a debugger or a profiler. Remember to build in
+Release mode when profiling. Built-in profiler in CLion is pretty convenient to
+use. You can learn about how to use it at
+<a class="reference external" href="https://www.jetbrains.com/help/clion/cpu-profiler.html">https://www.jetbrains.com/help/clion/cpu-profiler.html</a> At the same time, perf
+on the command line works well too.</p>
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <div>
+    <h3><a href="../index.html">Table of Contents</a></h3>
+    <ul>
+<li><a class="reference internal" href="#">Performance Guide into TableScan and Aggregation</a><ul>
+<li><a class="reference internal" href="#introduction">Introduction</a></li>
+<li><a class="reference internal" href="#query-plan">Query Plan</a></li>
+<li><a class="reference internal" href="#statistics-based-pruning">Statistics-Based Pruning</a></li>
+<li><a class="reference internal" href="#remaining-filter">Remaining Filter</a></li>
+<li><a class="reference internal" href="#lazy-vector">Lazy Vector</a></li>
+<li><a class="reference internal" href="#aggregation-pushdown">Aggregation Pushdown</a></li>
+<li><a class="reference internal" href="#performance-investigation">Performance Investigation</a></li>
+</ul>
+</li>
+</ul>
+
+  </div>
+  <div>
+    <h4>Previous topic</h4>
+    <p class="topless"><a href="../develop.html"
+                          title="previous chapter">Developer Guide</a></p>
+  </div>
+  <div>
+    <h4>Next topic</h4>
+    <p class="topless"><a href="setup-install.html"
+                          title="next chapter">Presto Native Execution - Getting Started</a></p>
+  </div>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/develop/perf-scan-agg.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="setup-install.html" title="Presto Native Execution - Getting Started"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../develop.html" title="Developer Guide"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Presto Native Execution  documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../develop.html" >Developer Guide</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Performance Guide into TableScan and Aggregation</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright TBD.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 6.1.3.
+    </div>
+  </body>
+</html>
