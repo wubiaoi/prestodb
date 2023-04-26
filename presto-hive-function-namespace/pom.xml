@@ -27,8 +27,8 @@
         </dependency>
 
         <dependency>
-            <groupId>com.facebook.presto.hadoop</groupId>
-            <artifactId>hadoop-apache2</artifactId>
+            <groupId>io.prestosql.hadoop</groupId>
+            <artifactId>hadoop-apache</artifactId>
         </dependency>
 
         <!-- the dependency is needed for UDF registration -->
@@ -50,8 +50,8 @@
         </dependency>
 
         <dependency>
-            <groupId>com.facebook.presto.hive</groupId>
-            <artifactId>hive-apache</artifactId>
+                <groupId>io.prestosql.hive</groupId>
+    <artifactId>hive-apache</artifactId>
         </dependency>
 
         <dependency>
