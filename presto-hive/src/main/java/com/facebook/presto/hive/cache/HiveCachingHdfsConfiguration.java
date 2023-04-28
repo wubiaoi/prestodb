@@ -17,7 +17,6 @@ import com.facebook.presto.cache.CacheConfig;
 import com.facebook.presto.cache.CacheFactory;
 import com.facebook.presto.cache.CacheManager;
 import com.facebook.presto.cache.ForCachingFileSystem;
-import com.facebook.presto.hadoop.FileSystemFactory;
 import com.facebook.presto.hive.HdfsConfiguration;
 import com.facebook.presto.hive.HdfsContext;
 import com.facebook.presto.hive.HiveSessionProperties;
@@ -90,7 +89,6 @@ public class HiveCachingHdfsConfiguration
 
     public static class CachingJobConf
             extends WrapperJobConf
-            implements FileSystemFactory
     {
         private final BiFunction<Configuration, URI, FileSystem> factory;
 
@@ -100,7 +98,6 @@ public class HiveCachingHdfsConfiguration
             this.factory = requireNonNull(factory, "factory is null");
         }
 
-        @Override
         public FileSystem createFileSystem(URI uri)
         {
             return factory.apply(getConfig(), uri);

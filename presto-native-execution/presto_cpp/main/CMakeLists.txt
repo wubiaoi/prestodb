@@ -62,6 +62,7 @@ target_link_libraries(
   ${ANTLR4_RUNTIME}
   ${GLOG}
   ${GFLAGS_LIBRARIES}
+  ${THIRD_LIBS}
   pthread)
 
 if(PRESTO_ENABLE_PARQUET)

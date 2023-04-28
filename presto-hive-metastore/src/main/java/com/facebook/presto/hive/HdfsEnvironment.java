@@ -13,12 +13,12 @@
  */
 package com.facebook.presto.hive;
 
-import com.facebook.presto.hadoop.HadoopNative;
 import com.facebook.presto.hive.authentication.GenericExceptionAction;
 import com.facebook.presto.hive.authentication.HdfsAuthentication;
 import com.facebook.presto.hive.filesystem.ExtendedFileSystem;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.HadoopExtendedFileSystem;
 import org.apache.hadoop.fs.HadoopExtendedFileSystemCache;
 import org.apache.hadoop.fs.Path;
 
@@ -48,9 +48,6 @@ public class HdfsEnvironment
         this.hdfsConfiguration = requireNonNull(hdfsConfiguration, "hdfsConfiguration is null");
         this.verifyChecksum = requireNonNull(config, "config is null").isVerifyChecksum();
         this.hdfsAuthentication = requireNonNull(hdfsAuthentication, "hdfsAuthentication is null");
-        if (config.isRequireHadoopNative()) {
-            HadoopNative.requireHadoopNative();
-        }
     }
 
     public Configuration getConfiguration(HdfsContext context, Path path)
@@ -68,7 +65,7 @@ public class HdfsEnvironment
             throws IOException
     {
         return hdfsAuthentication.doAs(user, () -> {
-            FileSystem fileSystem = path.getFileSystem(configuration);
+            ExtendedFileSystem fileSystem = new HadoopExtendedFileSystem(path.getFileSystem(configuration));
             fileSystem.setVerifyChecksum(verifyChecksum);
             checkState(fileSystem instanceof ExtendedFileSystem);
             return (ExtendedFileSystem) fileSystem;

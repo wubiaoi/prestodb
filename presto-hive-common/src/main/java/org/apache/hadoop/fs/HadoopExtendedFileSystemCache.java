@@ -19,14 +19,14 @@ import java.lang.reflect.Modifier;
 
 public class HadoopExtendedFileSystemCache
 {
-    private static PrestoExtendedFileSystemCache cache;
+    private static PrestoFileSystemCache cache;
 
     private HadoopExtendedFileSystemCache() {}
 
     public static synchronized void initialize()
     {
         if (cache == null) {
-            cache = setFinalStatic(FileSystem.class, "CACHE", new PrestoExtendedFileSystemCache());
+            cache = setFinalStatic(FileSystem.class, "CACHE", new PrestoFileSystemCache());
         }
     }
 

@@ -510,7 +510,7 @@ public class CopyOnFirstWriteConfiguration
 
     private void checkAndSet(Runnable action)
     {
-        if (isMutable) {
+        if (isMutable || lock == null) {
             action.run();
             return;
         }

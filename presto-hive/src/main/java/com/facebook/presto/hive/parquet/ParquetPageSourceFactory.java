@@ -51,10 +51,7 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.parquet.column.ColumnDescriptor;
-import org.apache.parquet.crypto.DecryptionPropertiesFactory;
-import org.apache.parquet.crypto.FileDecryptionProperties;
 import org.apache.parquet.crypto.HiddenColumnException;
-import org.apache.parquet.crypto.InternalFileDecryptor;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.FileMetaData;
@@ -128,7 +125,6 @@ import static com.google.common.base.Strings.nullToEmpty;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector.Category.PRIMITIVE;
-import static org.apache.parquet.crypto.DecryptionPropertiesFactory.loadFactory;
 import static org.apache.parquet.crypto.HiddenColumnChunkMetaData.isHiddenColumn;
 import static org.apache.parquet.io.ColumnIOConverter.constructField;
 import static org.apache.parquet.io.ColumnIOConverter.findNestedColumnIO;
@@ -203,13 +199,11 @@ public class ParquetPageSourceFactory
             // Lambda expression below requires final variable, so we define a new variable parquetDataSource.
             final ParquetDataSource parquetDataSource = buildHdfsParquetDataSource(inputStream, path, stats);
             dataSource = parquetDataSource;
-            Optional<InternalFileDecryptor> fileDecryptor = createDecryptor(configuration, path);
             ParquetMetadata parquetMetadata = hdfsEnvironment.doAs(user, () -> parquetMetadataSource.getParquetMetadata(
                     parquetDataSource,
                     fileSplit.getFileSize(),
                     hiveFileContext.isCacheable(),
                     hiveFileContext.getModificationTime(),
-                    fileDecryptor,
                     readMaskedValue).getParquetMetadata());
 
             if (!columns.isEmpty() && columns.stream().allMatch(hiveColumnHandle -> hiveColumnHandle.getColumnType() == AGGREGATED)) {
@@ -278,8 +272,8 @@ public class ParquetPageSourceFactory
                     isParquetBatchReaderVerificationEnabled(session),
                     parquetPredicate,
                     blockIndexStores,
-                    columnIndexFilterEnabled,
-                    fileDecryptor);
+                    columnIndexFilterEnabled
+                    );
 
             ImmutableList.Builder<String> namesBuilder = ImmutableList.builder();
             ImmutableList.Builder<Type> typesBuilder = ImmutableList.builder();
@@ -513,13 +507,6 @@ public class ParquetPageSourceFactory
             return getSubfieldType(messageType, pushedDownSubfield.getRootName(), nestedColumnPath(pushedDownSubfield));
         }
         return getParquetType(prestoType, messageType, useParquetColumnNames, column, tableName, path);
-    }
-
-    public static Optional<InternalFileDecryptor> createDecryptor(Configuration configuration, Path path)
-    {
-        DecryptionPropertiesFactory cryptoFactory = loadFactory(configuration);
-        FileDecryptionProperties fileDecryptionProperties = (cryptoFactory == null) ? null : cryptoFactory.getFileDecryptionProperties(configuration, path);
-        return (fileDecryptionProperties == null) ? Optional.empty() : Optional.of(new InternalFileDecryptor(fileDecryptionProperties));
     }
 
     private static Optional<Integer> findFirstNonHiddenColumnId(BlockMetaData block)

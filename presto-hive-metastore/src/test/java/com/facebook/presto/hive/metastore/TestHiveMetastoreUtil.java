@@ -25,7 +25,6 @@ import org.apache.hadoop.hive.metastore.api.PrincipalPrivilegeSet;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.SkewedInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
-import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
 import org.testng.annotations.Test;
 
 import java.util.List;
@@ -147,24 +146,6 @@ public class TestHiveMetastoreUtil
         Partition partition = ThriftMetastoreUtil.fromMetastoreApiPartition(TEST_PARTITION, TEST_PARTITION_VERSION_FETCHER, TEST_COLUMN_CONVERTER);
         org.apache.hadoop.hive.metastore.api.Partition metastoreApiPartition = ThriftMetastoreUtil.toMetastoreApiPartition(partition, TEST_COLUMN_CONVERTER);
         assertEquals(metastoreApiPartition, TEST_PARTITION);
-    }
-
-    @Test
-    public void testHiveSchemaTable()
-    {
-        Properties expected = MetaStoreUtils.getTableMetadata(TEST_TABLE_WITH_UNSUPPORTED_FIELDS);
-        expected.remove(COLUMN_NAME_DELIMITER);
-        Properties actual = getHiveSchema(ThriftMetastoreUtil.fromMetastoreApiTable(TEST_TABLE_WITH_UNSUPPORTED_FIELDS, TEST_SCHEMA, TEST_COLUMN_CONVERTER));
-        assertEquals(actual, expected);
-    }
-
-    @Test
-    public void testHiveSchemaPartition()
-    {
-        Properties expected = MetaStoreUtils.getPartitionMetadata(TEST_PARTITION_WITH_UNSUPPORTED_FIELDS, TEST_TABLE_WITH_UNSUPPORTED_FIELDS);
-        expected.remove(COLUMN_NAME_DELIMITER);
-        Properties actual = getHiveSchema(ThriftMetastoreUtil.fromMetastoreApiPartition(TEST_PARTITION_WITH_UNSUPPORTED_FIELDS, TEST_PARTITION_VERSION_FETCHER, TEST_COLUMN_CONVERTER), ThriftMetastoreUtil.fromMetastoreApiTable(TEST_TABLE_WITH_UNSUPPORTED_FIELDS, TEST_SCHEMA, TEST_COLUMN_CONVERTER));
-        assertEquals(actual, expected);
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "Writing to skewed table/partition is not supported")

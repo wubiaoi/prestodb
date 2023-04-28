@@ -23,18 +23,12 @@ import com.facebook.presto.parquet.cache.MetadataReader;
 import io.airlift.slice.Slice;
 import org.apache.parquet.column.Encoding;
 import org.apache.parquet.column.EncodingStats;
-import org.apache.parquet.crypto.AesCipher;
-import org.apache.parquet.crypto.InternalColumnDecryptionSetup;
-import org.apache.parquet.crypto.InternalFileDecryptor;
-import org.apache.parquet.crypto.ModuleCipherFactory.ModuleType;
-import org.apache.parquet.format.BlockCipher;
 import org.apache.parquet.format.DataPageHeader;
 import org.apache.parquet.format.DataPageHeaderV2;
 import org.apache.parquet.format.DictionaryPageHeader;
 import org.apache.parquet.format.PageHeader;
 import org.apache.parquet.format.Util;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
-import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.internal.column.columnindex.OffsetIndex;
 import org.openjdk.jol.info.ClassLayout;
 
@@ -78,52 +72,35 @@ public class ParquetColumnChunk
         return descriptor;
     }
 
-    protected PageHeader readPageHeader(BlockCipher.Decryptor headerBlockDecryptor, byte[] pageHeaderAAD)
+    protected PageHeader readPageHeader()
             throws IOException
     {
-        return Util.readPageHeader(stream, headerBlockDecryptor, pageHeaderAAD);
+        return Util.readPageHeader(stream);
     }
 
     public PageReader buildPageReader(
-            Optional<InternalFileDecryptor> fileDecryptor,
             int rowGroupOrdinal,
             int columnOrdinal)
             throws IOException
     {
         byte[] dataPageHeaderAdditionalAuthenticationData = null;
-        BlockCipher.Decryptor headerBlockDecryptor = null;
-        InternalColumnDecryptionSetup columnDecryptionSetup = null;
-        if (fileDecryptor.isPresent()) {
-            ColumnPath columnPath = ColumnPath.get(descriptor.getColumnDescriptor().getPath());
-            columnDecryptionSetup = fileDecryptor.get().getColumnSetup(columnPath);
-            headerBlockDecryptor = columnDecryptionSetup.getMetaDataDecryptor();
-            if (headerBlockDecryptor != null) {
-                dataPageHeaderAdditionalAuthenticationData = AesCipher.createModuleAAD(fileDecryptor.get().getFileAAD(), ModuleType.DataPageHeader, rowGroupOrdinal, columnOrdinal, 0);
-            }
-        }
 
         //Read the dictionary page if it exists
         //The dictionary page **must be the very first page in the column chunk**
         //See https://github.com/apache/parquet-format/pull/177 for details
         DictionaryPage dictionaryPage = null;
         if (hasDictionaryPage(descriptor.getColumnChunkMetaData())) {
-            byte[] pageHeaderAAD = headerBlockDecryptor != null ?
-                    AesCipher.createModuleAAD(fileDecryptor.get().getFileAAD(), ModuleType.DictionaryPageHeader, rowGroupOrdinal, columnOrdinal, -1)
-                    : null;
-            PageHeader pageHeader = readPageHeader(headerBlockDecryptor, pageHeaderAAD);
+            PageHeader pageHeader = readPageHeader();
             int uncompressedPageSize = pageHeader.getUncompressed_page_size();
             int compressedPageSize = pageHeader.getCompressed_page_size();
             dictionaryPage = readDictionaryPage(pageHeader, uncompressedPageSize, compressedPageSize);
         }
 
-        final Iterator<DataPage> dataPageIterator = getDataPageIterator(dataPageHeaderAdditionalAuthenticationData, headerBlockDecryptor, dictionaryPage);
-
-        byte[] fileAdditionalAuthenticationData = fileDecryptor.map(InternalFileDecryptor::getFileAAD).orElse(null);
-        Optional<BlockCipher.Decryptor> dataDecryptor = getDataDecryptor(columnDecryptionSetup);
+        final Iterator<DataPage> dataPageIterator = getDataPageIterator(dataPageHeaderAdditionalAuthenticationData,dictionaryPage);
 
         long totalValueCount = descriptor.getColumnChunkMetaData().getValueCount();
         return new PageReader(descriptor.getColumnChunkMetaData().getCodec(), dataPageIterator, totalValueCount,
-                dictionaryPage, offsetIndex, dataDecryptor, fileAdditionalAuthenticationData, rowGroupOrdinal, columnOrdinal);
+                dictionaryPage, offsetIndex);
     }
 
     @Override
@@ -134,7 +111,7 @@ public class ParquetColumnChunk
         memoryContext.close();
     }
 
-    private Iterator<DataPage> getDataPageIterator(byte[] dataPageHeaderAdditionalAuthenticationData, BlockCipher.Decryptor headerBlockDecryptor, DictionaryPage dictionaryPage)
+    private Iterator<DataPage> getDataPageIterator(byte[] dataPageHeaderAdditionalAuthenticationData, DictionaryPage dictionaryPage)
     {
         return new Iterator<DataPage>()
         {
@@ -160,11 +137,7 @@ public class ParquetColumnChunk
                 DataPage readPage = null;
                 try {
                     byte[] pageHeaderAadditionalAuthenticationData = dataPageHeaderAdditionalAuthenticationData;
-                    if (headerBlockDecryptor != null) {
-                        // Important: this verifies file integrity (makes sure dictionary page had not been removed)
-                        AesCipher.quickUpdatePageAAD(dataPageHeaderAdditionalAuthenticationData, pageOrdinal);
-                    }
-                    PageHeader pageHeader = readPageHeader(headerBlockDecryptor, pageHeaderAadditionalAuthenticationData);
+                    PageHeader pageHeader = readPageHeader();
                     int uncompressedPageSize = pageHeader.getUncompressed_page_size();
                     int compressedPageSize = pageHeader.getCompressed_page_size();
                     long firstRowIndex;
@@ -213,14 +186,6 @@ public class ParquetColumnChunk
     public long getRetainedSizeInBytes()
     {
         return INSTANCE_SIZE + stream.getRetainedSizeInBytes();
-    }
-
-    private Optional<BlockCipher.Decryptor> getDataDecryptor(InternalColumnDecryptionSetup columnDecryptionSetup)
-    {
-        if (columnDecryptionSetup == null || columnDecryptionSetup.getDataDecryptor() == null) {
-            return Optional.empty();
-        }
-        return Optional.of(columnDecryptionSetup.getDataDecryptor());
     }
 
     private Slice getSlice(int size)

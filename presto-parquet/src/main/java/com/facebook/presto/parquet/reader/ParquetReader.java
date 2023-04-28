@@ -44,7 +44,6 @@ import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.crypto.HiddenColumnChunkMetaData;
-import org.apache.parquet.crypto.InternalFileDecryptor;
 import org.apache.parquet.filter2.compat.FilterCompat;
 import org.apache.parquet.filter2.predicate.FilterPredicate;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
@@ -98,7 +97,6 @@ public class ParquetReader
     private static final int BATCH_SIZE_GROWTH_FACTOR = 2;
     protected final ColumnReader[] verificationColumnReaders;
     protected final ParquetDataSource dataSource;
-    private final Optional<InternalFileDecryptor> fileDecryptor;
     private final List<BlockMetaData> blocks;
     private final Optional<List<Long>> firstRowsOfBlocks;
     private final List<PrimitiveColumnIO> columns;
@@ -143,8 +141,7 @@ public class ParquetReader
             boolean enableVerification,
             Predicate parquetPredicate,
             List<ColumnIndexStore> blockIndexStores,
-            boolean columnIndexFilterEnabled,
-            Optional<InternalFileDecryptor> fileDecryptor)
+            boolean columnIndexFilterEnabled)
     {
         this.blocks = blocks;
         this.firstRowsOfBlocks = requireNonNull(firstRowsOfBlocks, "firstRowsOfBlocks is null");
@@ -179,8 +176,6 @@ public class ParquetReader
         }
         this.currentBlock = -1;
         this.columnIndexFilterEnabled = columnIndexFilterEnabled;
-        requireNonNull(fileDecryptor, "fileDecryptor is null");
-        this.fileDecryptor = fileDecryptor;
     }
 
     @Override
@@ -497,18 +492,7 @@ public class ParquetReader
     private PageReader createPageReaderInternal(ColumnDescriptor columnDescriptor, ParquetColumnChunk columnChunk, LocalMemoryContext memoryContext)
             throws IOException
     {
-        if (!isEncryptedColumn(fileDecryptor, columnDescriptor)) {
-            return columnChunk.buildPageReader(Optional.empty(), -1, -1);
-        }
-
-        int columnOrdinal = fileDecryptor.get().getColumnSetup(ColumnPath.get(columnChunk.getDescriptor().getColumnDescriptor().getPath())).getOrdinal();
-        return columnChunk.buildPageReader(fileDecryptor, currentBlock, columnOrdinal);
-    }
-
-    private boolean isEncryptedColumn(Optional<InternalFileDecryptor> fileDecryptor, ColumnDescriptor columnDescriptor)
-    {
-        ColumnPath columnPath = ColumnPath.get(columnDescriptor.getPath());
-        return fileDecryptor.isPresent() && !fileDecryptor.get().plaintextFile() && fileDecryptor.get().getColumnSetup(columnPath).isEncrypted();
+        return columnChunk.buildPageReader( -1, -1);
     }
 
     private ColumnChunkMetaData getColumnChunkMetaData(ColumnDescriptor columnDescriptor)

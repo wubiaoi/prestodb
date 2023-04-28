@@ -19,7 +19,6 @@ import com.facebook.presto.common.PageBuilder;
 import com.facebook.presto.common.block.BlockBuilder;
 import com.facebook.presto.common.type.ArrayType;
 import com.facebook.presto.common.type.Type;
-import com.facebook.presto.hadoop.HadoopNative;
 import com.facebook.presto.hive.HdfsEnvironment;
 import com.facebook.presto.hive.HiveClientConfig;
 import com.facebook.presto.hive.HiveCompressionCodec;
@@ -90,10 +89,6 @@ import static java.util.stream.Collectors.toList;
 public class HiveFileFormatBenchmark
 {
     private static final long MIN_DATA_SIZE = new DataSize(50, MEGABYTE).toBytes();
-
-    static {
-        HadoopNative.requireHadoopNative();
-    }
 
     @SuppressWarnings("deprecation")
     private static final HiveClientConfig CONFIG = new HiveClientConfig();
