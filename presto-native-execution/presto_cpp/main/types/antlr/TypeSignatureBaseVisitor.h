@@ -20,7 +20,7 @@
 #include "antlr4-runtime.h"
 #include "TypeSignatureVisitor.h"
 
-
+namespace facebook::presto::type {
 /**
  * This class provides an empty implementation of TypeSignatureVisitor, which can be
  * extended to create a visitor which only needs to handle a subset of the available methods.
@@ -79,3 +79,4 @@ public:
 
 };
 
+} // namespace facebook::presto::type

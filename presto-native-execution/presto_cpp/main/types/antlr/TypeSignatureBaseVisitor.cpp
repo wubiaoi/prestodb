@@ -17,4 +17,6 @@
 
 #include "TypeSignatureBaseVisitor.h"
 
+using namespace facebook::presto::type;
+
 

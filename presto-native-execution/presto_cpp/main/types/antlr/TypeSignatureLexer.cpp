@@ -17,10 +17,9 @@
 
 #include "TypeSignatureLexer.h"
 
-
 using namespace antlr4;
 
-
+using namespace facebook::presto::type;
 
 using namespace antlr4;
 

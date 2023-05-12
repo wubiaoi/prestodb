@@ -20,7 +20,7 @@
 #include "antlr4-runtime.h"
 
 
-
+namespace facebook::presto::type {
 
 class  TypeSignatureLexer : public antlr4::Lexer {
 public:
@@ -61,3 +61,4 @@ private:
 
 };
 
+} // namespace facebook::presto::type

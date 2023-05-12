@@ -12,8 +12,8 @@
  * limitations under the License.
  */
 
-    #include <boost/algorithm/string.hpp>
-    #include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
+#include <boost/algorithm/string.hpp>
+#include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
 
 
 // Generated from TypeSignature.g4 by ANTLR 4.12.0
@@ -25,6 +25,7 @@
 
 
 using namespace antlrcpp;
+using namespace facebook::presto::type;
 
 using namespace antlr4;
 

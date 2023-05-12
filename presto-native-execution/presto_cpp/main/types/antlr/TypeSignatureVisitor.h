@@ -20,7 +20,7 @@
 #include "antlr4-runtime.h"
 #include "TypeSignatureParser.h"
 
-
+namespace facebook::presto::type {
 
 /**
  * This class defines an abstract visitor for a parse tree
@@ -59,3 +59,4 @@ public:
 
 };
 
+} // namespace facebook::presto::type
