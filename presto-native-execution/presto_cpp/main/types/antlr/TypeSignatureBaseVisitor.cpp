@@ -12,11 +12,13 @@
  * limitations under the License.
  */
 
-// Generated from TypeSignature.g4 by ANTLR 4.12.0
+    #include <boost/algorithm/string.hpp>
+    #include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
+
+
+// Generated from TypeSignature.g4 by ANTLR 4.9.3
 
 
 #include "TypeSignatureBaseVisitor.h"
 
 using namespace facebook::presto::type;
-
-

@@ -12,7 +12,11 @@
  * limitations under the License.
  */
 
-// Generated from TypeSignature.g4 by ANTLR 4.12.0
+#include <boost/algorithm/string.hpp>
+#include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
+
+
+// Generated from TypeSignature.g4 by ANTLR 4.9.3
 
 #pragma once
 
@@ -32,29 +36,29 @@ public:
   /**
    * Visit parse trees produced by TypeSignatureParser.
    */
-    virtual std::any visitStart(TypeSignatureParser::StartContext *context) = 0;
+    virtual antlrcpp::Any visitStart(TypeSignatureParser::StartContext *context) = 0;
 
-    virtual std::any visitType_spec(TypeSignatureParser::Type_specContext *context) = 0;
+    virtual antlrcpp::Any visitType_spec(TypeSignatureParser::Type_specContext *context) = 0;
 
-    virtual std::any visitNamed_type(TypeSignatureParser::Named_typeContext *context) = 0;
+    virtual antlrcpp::Any visitNamed_type(TypeSignatureParser::Named_typeContext *context) = 0;
 
-    virtual std::any visitType(TypeSignatureParser::TypeContext *context) = 0;
+    virtual antlrcpp::Any visitType(TypeSignatureParser::TypeContext *context) = 0;
 
-    virtual std::any visitSimple_type(TypeSignatureParser::Simple_typeContext *context) = 0;
+    virtual antlrcpp::Any visitSimple_type(TypeSignatureParser::Simple_typeContext *context) = 0;
 
-    virtual std::any visitVariable_type(TypeSignatureParser::Variable_typeContext *context) = 0;
+    virtual antlrcpp::Any visitVariable_type(TypeSignatureParser::Variable_typeContext *context) = 0;
 
-    virtual std::any visitDecimal_type(TypeSignatureParser::Decimal_typeContext *context) = 0;
+    virtual antlrcpp::Any visitDecimal_type(TypeSignatureParser::Decimal_typeContext *context) = 0;
 
-    virtual std::any visitType_list(TypeSignatureParser::Type_listContext *context) = 0;
+    virtual antlrcpp::Any visitType_list(TypeSignatureParser::Type_listContext *context) = 0;
 
-    virtual std::any visitRow_type(TypeSignatureParser::Row_typeContext *context) = 0;
+    virtual antlrcpp::Any visitRow_type(TypeSignatureParser::Row_typeContext *context) = 0;
 
-    virtual std::any visitMap_type(TypeSignatureParser::Map_typeContext *context) = 0;
+    virtual antlrcpp::Any visitMap_type(TypeSignatureParser::Map_typeContext *context) = 0;
 
-    virtual std::any visitArray_type(TypeSignatureParser::Array_typeContext *context) = 0;
+    virtual antlrcpp::Any visitArray_type(TypeSignatureParser::Array_typeContext *context) = 0;
 
-    virtual std::any visitIdentifier(TypeSignatureParser::IdentifierContext *context) = 0;
+    virtual antlrcpp::Any visitIdentifier(TypeSignatureParser::IdentifierContext *context) = 0;
 
 
 };

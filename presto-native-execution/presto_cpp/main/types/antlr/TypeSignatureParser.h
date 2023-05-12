@@ -12,11 +12,11 @@
  * limitations under the License.
  */
 
-#include <boost/algorithm/string.hpp>
-#include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
+    #include <boost/algorithm/string.hpp>
+    #include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
 
 
-// Generated from TypeSignature.g4 by ANTLR 4.12.0
+// Generated from TypeSignature.g4 by ANTLR 4.9.3
 
 #pragma once
 
@@ -40,20 +40,13 @@ public:
   };
 
   explicit TypeSignatureParser(antlr4::TokenStream *input);
+  ~TypeSignatureParser();
 
-  TypeSignatureParser(antlr4::TokenStream *input, const antlr4::atn::ParserATNSimulatorOptions &options);
-
-  ~TypeSignatureParser() override;
-
-  std::string getGrammarFileName() const override;
-
-  const antlr4::atn::ATN& getATN() const override;
-
-  const std::vector<std::string>& getRuleNames() const override;
-
-  const antlr4::dfa::Vocabulary& getVocabulary() const override;
-
-  antlr4::atn::SerializedATNView getSerializedATN() const override;
+  virtual std::string getGrammarFileName() const override;
+  virtual const antlr4::atn::ATN& getATN() const override { return _atn; };
+  virtual const std::vector<std::string>& getTokenNames() const override { return _tokenNames; }; // deprecated: use vocabulary instead.
+  virtual const std::vector<std::string>& getRuleNames() const override;
+  virtual antlr4::dfa::Vocabulary& getVocabulary() const override;
 
 
   class StartContext;
@@ -77,7 +70,7 @@ public:
     antlr4::tree::TerminalNode *EOF();
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -91,7 +84,7 @@ public:
     TypeContext *type();
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -105,7 +98,7 @@ public:
     TypeContext *type();
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -123,7 +116,7 @@ public:
     Row_typeContext *row_type();
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -137,7 +130,7 @@ public:
     antlr4::tree::TerminalNode *TYPE_WITH_SPACES();
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -152,7 +145,7 @@ public:
     antlr4::tree::TerminalNode* NUMBER(size_t i);
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -167,7 +160,7 @@ public:
     antlr4::tree::TerminalNode* NUMBER(size_t i);
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -181,7 +174,7 @@ public:
     Type_specContext* type_spec(size_t i);
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -195,7 +188,7 @@ public:
     Type_listContext *type_list();
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -210,7 +203,7 @@ public:
     TypeContext* type(size_t i);
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -224,7 +217,7 @@ public:
     TypeContext *type();
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
@@ -238,27 +231,32 @@ public:
     antlr4::tree::TerminalNode *WORD();
 
 
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
   IdentifierContext* identifier();
 
 
-  bool sempred(antlr4::RuleContext *_localctx, size_t ruleIndex, size_t predicateIndex) override;
-
+  virtual bool sempred(antlr4::RuleContext *_localctx, size_t ruleIndex, size_t predicateIndex) override;
   bool variable_typeSempred(Variable_typeContext *_localctx, size_t predicateIndex);
   bool decimal_typeSempred(Decimal_typeContext *_localctx, size_t predicateIndex);
   bool row_typeSempred(Row_typeContext *_localctx, size_t predicateIndex);
   bool map_typeSempred(Map_typeContext *_localctx, size_t predicateIndex);
   bool array_typeSempred(Array_typeContext *_localctx, size_t predicateIndex);
 
-  // By default the static state used to implement the parser is lazily initialized during the first
-  // call to the constructor. You can call this function if you wish to initialize the static state
-  // ahead of time.
-  static void initialize();
-
 private:
+  static std::vector<antlr4::dfa::DFA> _decisionToDFA;
+  static antlr4::atn::PredictionContextCache _sharedContextCache;
+  static std::vector<std::string> _ruleNames;
+  static std::vector<std::string> _tokenNames;
+
+  static std::vector<std::string> _literalNames;
+  static std::vector<std::string> _symbolicNames;
+  static antlr4::dfa::Vocabulary _vocabulary;
+  static antlr4::atn::ATN _atn;
+  static std::vector<uint16_t> _serializedATN;
+
 
       #define Token()         (getCurrentToken()->getText())
       #define UpCase(str)     (boost::to_upper_copy(str))
@@ -268,6 +266,11 @@ private:
       #define isVarToken()         (UpCase(Token()) == "VARCHAR" || UpCase(Token()) == "CHAR" || UpCase(Token()) == "VARBINARY")
       #define isDecimalToken()     (UpCase(Token()) == "DECIMAL")
 
+
+  struct Initializer {
+    Initializer();
+  };
+  static Initializer _init;
 };
 
 } // namespace facebook::presto::type

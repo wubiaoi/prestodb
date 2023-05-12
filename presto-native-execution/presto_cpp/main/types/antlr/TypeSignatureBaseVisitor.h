@@ -12,13 +12,17 @@
  * limitations under the License.
  */
 
-// Generated from TypeSignature.g4 by ANTLR 4.12.0
+#include <boost/algorithm/string.hpp>
+#include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
+
+
+// Generated from TypeSignature.g4 by ANTLR 4.9.3
 
 #pragma once
 
 
 #include "antlr4-runtime.h"
-#include "TypeSignatureVisitor.h"
+#include "presto_cpp/main/types/antlr/TypeSignatureVisitor.h"
 
 namespace facebook::presto::type {
 /**
@@ -28,51 +32,51 @@ namespace facebook::presto::type {
 class  TypeSignatureBaseVisitor : public TypeSignatureVisitor {
 public:
 
-  virtual std::any visitStart(TypeSignatureParser::StartContext *ctx) override {
+  virtual antlrcpp::Any visitStart(TypeSignatureParser::StartContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitType_spec(TypeSignatureParser::Type_specContext *ctx) override {
+  virtual antlrcpp::Any visitType_spec(TypeSignatureParser::Type_specContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitNamed_type(TypeSignatureParser::Named_typeContext *ctx) override {
+  virtual antlrcpp::Any visitNamed_type(TypeSignatureParser::Named_typeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitType(TypeSignatureParser::TypeContext *ctx) override {
+  virtual antlrcpp::Any visitType(TypeSignatureParser::TypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitSimple_type(TypeSignatureParser::Simple_typeContext *ctx) override {
+  virtual antlrcpp::Any visitSimple_type(TypeSignatureParser::Simple_typeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitVariable_type(TypeSignatureParser::Variable_typeContext *ctx) override {
+  virtual antlrcpp::Any visitVariable_type(TypeSignatureParser::Variable_typeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitDecimal_type(TypeSignatureParser::Decimal_typeContext *ctx) override {
+  virtual antlrcpp::Any visitDecimal_type(TypeSignatureParser::Decimal_typeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitType_list(TypeSignatureParser::Type_listContext *ctx) override {
+  virtual antlrcpp::Any visitType_list(TypeSignatureParser::Type_listContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitRow_type(TypeSignatureParser::Row_typeContext *ctx) override {
+  virtual antlrcpp::Any visitRow_type(TypeSignatureParser::Row_typeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitMap_type(TypeSignatureParser::Map_typeContext *ctx) override {
+  virtual antlrcpp::Any visitMap_type(TypeSignatureParser::Map_typeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitArray_type(TypeSignatureParser::Array_typeContext *ctx) override {
+  virtual antlrcpp::Any visitArray_type(TypeSignatureParser::Array_typeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitIdentifier(TypeSignatureParser::IdentifierContext *ctx) override {
+  virtual antlrcpp::Any visitIdentifier(TypeSignatureParser::IdentifierContext *ctx) override {
     return visitChildren(ctx);
   }
 

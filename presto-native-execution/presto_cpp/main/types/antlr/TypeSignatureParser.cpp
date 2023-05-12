@@ -12,11 +12,11 @@
  * limitations under the License.
  */
 
-#include <boost/algorithm/string.hpp>
-#include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
+    #include <boost/algorithm/string.hpp>
+    #include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
 
 
-// Generated from TypeSignature.g4 by ANTLR 4.12.0
+// Generated from TypeSignature.g4 by ANTLR 4.9.3
 
 
 #include "TypeSignatureVisitor.h"
@@ -29,110 +29,12 @@ using namespace facebook::presto::type;
 
 using namespace antlr4;
 
-namespace {
-
-struct TypeSignatureParserStaticData final {
-  TypeSignatureParserStaticData(std::vector<std::string> ruleNames,
-                        std::vector<std::string> literalNames,
-                        std::vector<std::string> symbolicNames)
-      : ruleNames(std::move(ruleNames)), literalNames(std::move(literalNames)),
-        symbolicNames(std::move(symbolicNames)),
-        vocabulary(this->literalNames, this->symbolicNames) {}
-
-  TypeSignatureParserStaticData(const TypeSignatureParserStaticData&) = delete;
-  TypeSignatureParserStaticData(TypeSignatureParserStaticData&&) = delete;
-  TypeSignatureParserStaticData& operator=(const TypeSignatureParserStaticData&) = delete;
-  TypeSignatureParserStaticData& operator=(TypeSignatureParserStaticData&&) = delete;
-
-  std::vector<antlr4::dfa::DFA> decisionToDFA;
-  antlr4::atn::PredictionContextCache sharedContextCache;
-  const std::vector<std::string> ruleNames;
-  const std::vector<std::string> literalNames;
-  const std::vector<std::string> symbolicNames;
-  const antlr4::dfa::Vocabulary vocabulary;
-  antlr4::atn::SerializedATNView serializedATN;
-  std::unique_ptr<antlr4::atn::ATN> atn;
-};
-
-::antlr4::internal::OnceFlag typesignatureParserOnceFlag;
-TypeSignatureParserStaticData *typesignatureParserStaticData = nullptr;
-
-void typesignatureParserInitialize() {
-  assert(typesignatureParserStaticData == nullptr);
-  auto staticData = std::make_unique<TypeSignatureParserStaticData>(
-    std::vector<std::string>{
-      "start", "type_spec", "named_type", "type", "simple_type", "variable_type", 
-      "decimal_type", "type_list", "row_type", "map_type", "array_type", 
-      "identifier"
-    },
-    std::vector<std::string>{
-      "", "'('", "')'", "','"
-    },
-    std::vector<std::string>{
-      "", "", "", "", "TYPE_WITH_SPACES", "WORD", "QUOTED_ID", "NUMBER", 
-      "WHITESPACE"
-    }
-  );
-  static const int32_t serializedATNSegment[] = {
-  	4,1,8,107,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,6,2,7,
-  	7,7,2,8,7,8,2,9,7,9,2,10,7,10,2,11,7,11,1,0,1,0,1,0,1,1,1,1,3,1,30,8,
-  	1,1,2,1,2,1,2,1,3,1,3,1,3,1,3,1,3,1,3,3,3,41,8,3,1,4,1,4,1,5,1,5,1,5,
-  	1,5,1,5,1,5,5,5,51,8,5,10,5,12,5,54,9,5,1,5,3,5,57,8,5,1,6,1,6,1,6,1,
-  	6,5,6,63,8,6,10,6,12,6,66,9,6,1,6,1,6,5,6,70,8,6,10,6,12,6,73,9,6,1,6,
-  	1,6,1,7,1,7,1,7,5,7,80,8,7,10,7,12,7,83,9,7,1,8,1,8,1,8,1,8,1,8,1,8,1,
-  	9,1,9,1,9,1,9,1,9,1,9,1,9,1,9,1,10,1,10,1,10,1,10,1,10,1,10,1,11,1,11,
-  	1,11,0,0,12,0,2,4,6,8,10,12,14,16,18,20,22,0,2,1,0,4,5,1,0,5,6,105,0,
-  	24,1,0,0,0,2,29,1,0,0,0,4,31,1,0,0,0,6,40,1,0,0,0,8,42,1,0,0,0,10,56,
-  	1,0,0,0,12,58,1,0,0,0,14,76,1,0,0,0,16,84,1,0,0,0,18,90,1,0,0,0,20,98,
-  	1,0,0,0,22,104,1,0,0,0,24,25,3,2,1,0,25,26,5,0,0,1,26,1,1,0,0,0,27,30,
-  	3,4,2,0,28,30,3,6,3,0,29,27,1,0,0,0,29,28,1,0,0,0,30,3,1,0,0,0,31,32,
-  	3,22,11,0,32,33,3,6,3,0,33,5,1,0,0,0,34,41,3,8,4,0,35,41,3,12,6,0,36,
-  	41,3,10,5,0,37,41,3,20,10,0,38,41,3,18,9,0,39,41,3,16,8,0,40,34,1,0,0,
-  	0,40,35,1,0,0,0,40,36,1,0,0,0,40,37,1,0,0,0,40,38,1,0,0,0,40,39,1,0,0,
-  	0,41,7,1,0,0,0,42,43,7,0,0,0,43,9,1,0,0,0,44,45,4,5,0,0,45,57,5,5,0,0,
-  	46,47,4,5,1,0,47,48,5,5,0,0,48,52,5,1,0,0,49,51,5,7,0,0,50,49,1,0,0,0,
-  	51,54,1,0,0,0,52,50,1,0,0,0,52,53,1,0,0,0,53,55,1,0,0,0,54,52,1,0,0,0,
-  	55,57,5,2,0,0,56,44,1,0,0,0,56,46,1,0,0,0,57,11,1,0,0,0,58,59,4,6,2,0,
-  	59,60,5,5,0,0,60,64,5,1,0,0,61,63,5,7,0,0,62,61,1,0,0,0,63,66,1,0,0,0,
-  	64,62,1,0,0,0,64,65,1,0,0,0,65,67,1,0,0,0,66,64,1,0,0,0,67,71,5,3,0,0,
-  	68,70,5,7,0,0,69,68,1,0,0,0,70,73,1,0,0,0,71,69,1,0,0,0,71,72,1,0,0,0,
-  	72,74,1,0,0,0,73,71,1,0,0,0,74,75,5,2,0,0,75,13,1,0,0,0,76,81,3,2,1,0,
-  	77,78,5,3,0,0,78,80,3,2,1,0,79,77,1,0,0,0,80,83,1,0,0,0,81,79,1,0,0,0,
-  	81,82,1,0,0,0,82,15,1,0,0,0,83,81,1,0,0,0,84,85,4,8,3,0,85,86,5,5,0,0,
-  	86,87,5,1,0,0,87,88,3,14,7,0,88,89,5,2,0,0,89,17,1,0,0,0,90,91,4,9,4,
-  	0,91,92,5,5,0,0,92,93,5,1,0,0,93,94,3,6,3,0,94,95,5,3,0,0,95,96,3,6,3,
-  	0,96,97,5,2,0,0,97,19,1,0,0,0,98,99,4,10,5,0,99,100,5,5,0,0,100,101,5,
-  	1,0,0,101,102,3,6,3,0,102,103,5,2,0,0,103,21,1,0,0,0,104,105,7,1,0,0,
-  	105,23,1,0,0,0,7,29,40,52,56,64,71,81
-  };
-  staticData->serializedATN = antlr4::atn::SerializedATNView(serializedATNSegment, sizeof(serializedATNSegment) / sizeof(serializedATNSegment[0]));
-
-  antlr4::atn::ATNDeserializer deserializer;
-  staticData->atn = deserializer.deserialize(staticData->serializedATN);
-
-  const size_t count = staticData->atn->getNumberOfDecisions();
-  staticData->decisionToDFA.reserve(count);
-  for (size_t i = 0; i < count; i++) { 
-    staticData->decisionToDFA.emplace_back(staticData->atn->getDecisionState(i), i);
-  }
-  typesignatureParserStaticData = staticData.release();
-}
-
-}
-
-TypeSignatureParser::TypeSignatureParser(TokenStream *input) : TypeSignatureParser(input, antlr4::atn::ParserATNSimulatorOptions()) {}
-
-TypeSignatureParser::TypeSignatureParser(TokenStream *input, const antlr4::atn::ParserATNSimulatorOptions &options) : Parser(input) {
-  TypeSignatureParser::initialize();
-  _interpreter = new atn::ParserATNSimulator(this, *typesignatureParserStaticData->atn, typesignatureParserStaticData->decisionToDFA, typesignatureParserStaticData->sharedContextCache, options);
+TypeSignatureParser::TypeSignatureParser(TokenStream *input) : Parser(input) {
+  _interpreter = new atn::ParserATNSimulator(this, _atn, _decisionToDFA, _sharedContextCache);
 }
 
 TypeSignatureParser::~TypeSignatureParser() {
   delete _interpreter;
-}
-
-const atn::ATN& TypeSignatureParser::getATN() const {
-  return *typesignatureParserStaticData->atn;
 }
 
 std::string TypeSignatureParser::getGrammarFileName() const {
@@ -140,15 +42,11 @@ std::string TypeSignatureParser::getGrammarFileName() const {
 }
 
 const std::vector<std::string>& TypeSignatureParser::getRuleNames() const {
-  return typesignatureParserStaticData->ruleNames;
+  return _ruleNames;
 }
 
-const dfa::Vocabulary& TypeSignatureParser::getVocabulary() const {
-  return typesignatureParserStaticData->vocabulary;
-}
-
-antlr4::atn::SerializedATNView TypeSignatureParser::getSerializedATN() const {
-  return typesignatureParserStaticData->serializedATN;
+dfa::Vocabulary& TypeSignatureParser::getVocabulary() const {
+  return _vocabulary;
 }
 
 
@@ -172,7 +70,7 @@ size_t TypeSignatureParser::StartContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::StartContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::StartContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitStart(this);
   else
@@ -227,7 +125,7 @@ size_t TypeSignatureParser::Type_specContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::Type_specContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::Type_specContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitType_spec(this);
   else
@@ -297,7 +195,7 @@ size_t TypeSignatureParser::Named_typeContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::Named_typeContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::Named_typeContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitNamed_type(this);
   else
@@ -368,7 +266,7 @@ size_t TypeSignatureParser::TypeContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::TypeContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::TypeContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitType(this);
   else
@@ -466,7 +364,7 @@ size_t TypeSignatureParser::Simple_typeContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::Simple_typeContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::Simple_typeContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitSimple_type(this);
   else
@@ -533,7 +431,7 @@ size_t TypeSignatureParser::Variable_typeContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::Variable_typeContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::Variable_typeContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitVariable_type(this);
   else
@@ -628,7 +526,7 @@ size_t TypeSignatureParser::Decimal_typeContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::Decimal_typeContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::Decimal_typeContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitDecimal_type(this);
   else
@@ -711,7 +609,7 @@ size_t TypeSignatureParser::Type_listContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::Type_listContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::Type_listContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitType_list(this);
   else
@@ -777,7 +675,7 @@ size_t TypeSignatureParser::Row_typeContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::Row_typeContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::Row_typeContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitRow_type(this);
   else
@@ -843,7 +741,7 @@ size_t TypeSignatureParser::Map_typeContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::Map_typeContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::Map_typeContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitMap_type(this);
   else
@@ -909,7 +807,7 @@ size_t TypeSignatureParser::Array_typeContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::Array_typeContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::Array_typeContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitArray_type(this);
   else
@@ -971,7 +869,7 @@ size_t TypeSignatureParser::IdentifierContext::getRuleIndex() const {
 }
 
 
-std::any TypeSignatureParser::IdentifierContext::accept(tree::ParseTreeVisitor *visitor) {
+antlrcpp::Any TypeSignatureParser::IdentifierContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<TypeSignatureVisitor*>(visitor))
     return parserVisitor->visitIdentifier(this);
   else
@@ -1079,6 +977,131 @@ bool TypeSignatureParser::array_typeSempred(Array_typeContext *_localctx, size_t
   return true;
 }
 
-void TypeSignatureParser::initialize() {
-  ::antlr4::internal::call_once(typesignatureParserOnceFlag, typesignatureParserInitialize);
+// Static vars and initialization.
+std::vector<dfa::DFA> TypeSignatureParser::_decisionToDFA;
+atn::PredictionContextCache TypeSignatureParser::_sharedContextCache;
+
+// We own the ATN which in turn owns the ATN states.
+atn::ATN TypeSignatureParser::_atn;
+std::vector<uint16_t> TypeSignatureParser::_serializedATN;
+
+std::vector<std::string> TypeSignatureParser::_ruleNames = {
+  "start", "type_spec", "named_type", "type", "simple_type", "variable_type", 
+  "decimal_type", "type_list", "row_type", "map_type", "array_type", "identifier"
+};
+
+std::vector<std::string> TypeSignatureParser::_literalNames = {
+  "", "'('", "')'", "','"
+};
+
+std::vector<std::string> TypeSignatureParser::_symbolicNames = {
+  "", "", "", "", "TYPE_WITH_SPACES", "WORD", "QUOTED_ID", "NUMBER", "WHITESPACE"
+};
+
+dfa::Vocabulary TypeSignatureParser::_vocabulary(_literalNames, _symbolicNames);
+
+std::vector<std::string> TypeSignatureParser::_tokenNames;
+
+TypeSignatureParser::Initializer::Initializer() {
+	for (size_t i = 0; i < _symbolicNames.size(); ++i) {
+		std::string name = _vocabulary.getLiteralName(i);
+		if (name.empty()) {
+			name = _vocabulary.getSymbolicName(i);
+		}
+
+		if (name.empty()) {
+			_tokenNames.push_back("<INVALID>");
+		} else {
+      _tokenNames.push_back(name);
+    }
+	}
+
+  static const uint16_t serializedATNSegment0[] = {
+    0x3, 0x608b, 0xa72a, 0x8133, 0xb9ed, 0x417c, 0x3be7, 0x7786, 0x5964, 
+       0x3, 0xa, 0x6d, 0x4, 0x2, 0x9, 0x2, 0x4, 0x3, 0x9, 0x3, 0x4, 0x4, 
+       0x9, 0x4, 0x4, 0x5, 0x9, 0x5, 0x4, 0x6, 0x9, 0x6, 0x4, 0x7, 0x9, 
+       0x7, 0x4, 0x8, 0x9, 0x8, 0x4, 0x9, 0x9, 0x9, 0x4, 0xa, 0x9, 0xa, 
+       0x4, 0xb, 0x9, 0xb, 0x4, 0xc, 0x9, 0xc, 0x4, 0xd, 0x9, 0xd, 0x3, 
+       0x2, 0x3, 0x2, 0x3, 0x2, 0x3, 0x3, 0x3, 0x3, 0x5, 0x3, 0x20, 0xa, 
+       0x3, 0x3, 0x4, 0x3, 0x4, 0x3, 0x4, 0x3, 0x5, 0x3, 0x5, 0x3, 0x5, 
+       0x3, 0x5, 0x3, 0x5, 0x3, 0x5, 0x5, 0x5, 0x2b, 0xa, 0x5, 0x3, 0x6, 
+       0x3, 0x6, 0x3, 0x7, 0x3, 0x7, 0x3, 0x7, 0x3, 0x7, 0x3, 0x7, 0x3, 
+       0x7, 0x7, 0x7, 0x35, 0xa, 0x7, 0xc, 0x7, 0xe, 0x7, 0x38, 0xb, 0x7, 
+       0x3, 0x7, 0x5, 0x7, 0x3b, 0xa, 0x7, 0x3, 0x8, 0x3, 0x8, 0x3, 0x8, 
+       0x3, 0x8, 0x7, 0x8, 0x41, 0xa, 0x8, 0xc, 0x8, 0xe, 0x8, 0x44, 0xb, 
+       0x8, 0x3, 0x8, 0x3, 0x8, 0x7, 0x8, 0x48, 0xa, 0x8, 0xc, 0x8, 0xe, 
+       0x8, 0x4b, 0xb, 0x8, 0x3, 0x8, 0x3, 0x8, 0x3, 0x9, 0x3, 0x9, 0x3, 
+       0x9, 0x7, 0x9, 0x52, 0xa, 0x9, 0xc, 0x9, 0xe, 0x9, 0x55, 0xb, 0x9, 
+       0x3, 0xa, 0x3, 0xa, 0x3, 0xa, 0x3, 0xa, 0x3, 0xa, 0x3, 0xa, 0x3, 
+       0xb, 0x3, 0xb, 0x3, 0xb, 0x3, 0xb, 0x3, 0xb, 0x3, 0xb, 0x3, 0xb, 
+       0x3, 0xb, 0x3, 0xc, 0x3, 0xc, 0x3, 0xc, 0x3, 0xc, 0x3, 0xc, 0x3, 
+       0xc, 0x3, 0xd, 0x3, 0xd, 0x3, 0xd, 0x2, 0x2, 0xe, 0x2, 0x4, 0x6, 
+       0x8, 0xa, 0xc, 0xe, 0x10, 0x12, 0x14, 0x16, 0x18, 0x2, 0x4, 0x3, 
+       0x2, 0x6, 0x7, 0x3, 0x2, 0x7, 0x8, 0x2, 0x6b, 0x2, 0x1a, 0x3, 0x2, 
+       0x2, 0x2, 0x4, 0x1f, 0x3, 0x2, 0x2, 0x2, 0x6, 0x21, 0x3, 0x2, 0x2, 
+       0x2, 0x8, 0x2a, 0x3, 0x2, 0x2, 0x2, 0xa, 0x2c, 0x3, 0x2, 0x2, 0x2, 
+       0xc, 0x3a, 0x3, 0x2, 0x2, 0x2, 0xe, 0x3c, 0x3, 0x2, 0x2, 0x2, 0x10, 
+       0x4e, 0x3, 0x2, 0x2, 0x2, 0x12, 0x56, 0x3, 0x2, 0x2, 0x2, 0x14, 0x5c, 
+       0x3, 0x2, 0x2, 0x2, 0x16, 0x64, 0x3, 0x2, 0x2, 0x2, 0x18, 0x6a, 0x3, 
+       0x2, 0x2, 0x2, 0x1a, 0x1b, 0x5, 0x4, 0x3, 0x2, 0x1b, 0x1c, 0x7, 0x2, 
+       0x2, 0x3, 0x1c, 0x3, 0x3, 0x2, 0x2, 0x2, 0x1d, 0x20, 0x5, 0x6, 0x4, 
+       0x2, 0x1e, 0x20, 0x5, 0x8, 0x5, 0x2, 0x1f, 0x1d, 0x3, 0x2, 0x2, 0x2, 
+       0x1f, 0x1e, 0x3, 0x2, 0x2, 0x2, 0x20, 0x5, 0x3, 0x2, 0x2, 0x2, 0x21, 
+       0x22, 0x5, 0x18, 0xd, 0x2, 0x22, 0x23, 0x5, 0x8, 0x5, 0x2, 0x23, 
+       0x7, 0x3, 0x2, 0x2, 0x2, 0x24, 0x2b, 0x5, 0xa, 0x6, 0x2, 0x25, 0x2b, 
+       0x5, 0xe, 0x8, 0x2, 0x26, 0x2b, 0x5, 0xc, 0x7, 0x2, 0x27, 0x2b, 0x5, 
+       0x16, 0xc, 0x2, 0x28, 0x2b, 0x5, 0x14, 0xb, 0x2, 0x29, 0x2b, 0x5, 
+       0x12, 0xa, 0x2, 0x2a, 0x24, 0x3, 0x2, 0x2, 0x2, 0x2a, 0x25, 0x3, 
+       0x2, 0x2, 0x2, 0x2a, 0x26, 0x3, 0x2, 0x2, 0x2, 0x2a, 0x27, 0x3, 0x2, 
+       0x2, 0x2, 0x2a, 0x28, 0x3, 0x2, 0x2, 0x2, 0x2a, 0x29, 0x3, 0x2, 0x2, 
+       0x2, 0x2b, 0x9, 0x3, 0x2, 0x2, 0x2, 0x2c, 0x2d, 0x9, 0x2, 0x2, 0x2, 
+       0x2d, 0xb, 0x3, 0x2, 0x2, 0x2, 0x2e, 0x2f, 0x6, 0x7, 0x2, 0x2, 0x2f, 
+       0x3b, 0x7, 0x7, 0x2, 0x2, 0x30, 0x31, 0x6, 0x7, 0x3, 0x2, 0x31, 0x32, 
+       0x7, 0x7, 0x2, 0x2, 0x32, 0x36, 0x7, 0x3, 0x2, 0x2, 0x33, 0x35, 0x7, 
+       0x9, 0x2, 0x2, 0x34, 0x33, 0x3, 0x2, 0x2, 0x2, 0x35, 0x38, 0x3, 0x2, 
+       0x2, 0x2, 0x36, 0x34, 0x3, 0x2, 0x2, 0x2, 0x36, 0x37, 0x3, 0x2, 0x2, 
+       0x2, 0x37, 0x39, 0x3, 0x2, 0x2, 0x2, 0x38, 0x36, 0x3, 0x2, 0x2, 0x2, 
+       0x39, 0x3b, 0x7, 0x4, 0x2, 0x2, 0x3a, 0x2e, 0x3, 0x2, 0x2, 0x2, 0x3a, 
+       0x30, 0x3, 0x2, 0x2, 0x2, 0x3b, 0xd, 0x3, 0x2, 0x2, 0x2, 0x3c, 0x3d, 
+       0x6, 0x8, 0x4, 0x2, 0x3d, 0x3e, 0x7, 0x7, 0x2, 0x2, 0x3e, 0x42, 0x7, 
+       0x3, 0x2, 0x2, 0x3f, 0x41, 0x7, 0x9, 0x2, 0x2, 0x40, 0x3f, 0x3, 0x2, 
+       0x2, 0x2, 0x41, 0x44, 0x3, 0x2, 0x2, 0x2, 0x42, 0x40, 0x3, 0x2, 0x2, 
+       0x2, 0x42, 0x43, 0x3, 0x2, 0x2, 0x2, 0x43, 0x45, 0x3, 0x2, 0x2, 0x2, 
+       0x44, 0x42, 0x3, 0x2, 0x2, 0x2, 0x45, 0x49, 0x7, 0x5, 0x2, 0x2, 0x46, 
+       0x48, 0x7, 0x9, 0x2, 0x2, 0x47, 0x46, 0x3, 0x2, 0x2, 0x2, 0x48, 0x4b, 
+       0x3, 0x2, 0x2, 0x2, 0x49, 0x47, 0x3, 0x2, 0x2, 0x2, 0x49, 0x4a, 0x3, 
+       0x2, 0x2, 0x2, 0x4a, 0x4c, 0x3, 0x2, 0x2, 0x2, 0x4b, 0x49, 0x3, 0x2, 
+       0x2, 0x2, 0x4c, 0x4d, 0x7, 0x4, 0x2, 0x2, 0x4d, 0xf, 0x3, 0x2, 0x2, 
+       0x2, 0x4e, 0x53, 0x5, 0x4, 0x3, 0x2, 0x4f, 0x50, 0x7, 0x5, 0x2, 0x2, 
+       0x50, 0x52, 0x5, 0x4, 0x3, 0x2, 0x51, 0x4f, 0x3, 0x2, 0x2, 0x2, 0x52, 
+       0x55, 0x3, 0x2, 0x2, 0x2, 0x53, 0x51, 0x3, 0x2, 0x2, 0x2, 0x53, 0x54, 
+       0x3, 0x2, 0x2, 0x2, 0x54, 0x11, 0x3, 0x2, 0x2, 0x2, 0x55, 0x53, 0x3, 
+       0x2, 0x2, 0x2, 0x56, 0x57, 0x6, 0xa, 0x5, 0x2, 0x57, 0x58, 0x7, 0x7, 
+       0x2, 0x2, 0x58, 0x59, 0x7, 0x3, 0x2, 0x2, 0x59, 0x5a, 0x5, 0x10, 
+       0x9, 0x2, 0x5a, 0x5b, 0x7, 0x4, 0x2, 0x2, 0x5b, 0x13, 0x3, 0x2, 0x2, 
+       0x2, 0x5c, 0x5d, 0x6, 0xb, 0x6, 0x2, 0x5d, 0x5e, 0x7, 0x7, 0x2, 0x2, 
+       0x5e, 0x5f, 0x7, 0x3, 0x2, 0x2, 0x5f, 0x60, 0x5, 0x8, 0x5, 0x2, 0x60, 
+       0x61, 0x7, 0x5, 0x2, 0x2, 0x61, 0x62, 0x5, 0x8, 0x5, 0x2, 0x62, 0x63, 
+       0x7, 0x4, 0x2, 0x2, 0x63, 0x15, 0x3, 0x2, 0x2, 0x2, 0x64, 0x65, 0x6, 
+       0xc, 0x7, 0x2, 0x65, 0x66, 0x7, 0x7, 0x2, 0x2, 0x66, 0x67, 0x7, 0x3, 
+       0x2, 0x2, 0x67, 0x68, 0x5, 0x8, 0x5, 0x2, 0x68, 0x69, 0x7, 0x4, 0x2, 
+       0x2, 0x69, 0x17, 0x3, 0x2, 0x2, 0x2, 0x6a, 0x6b, 0x9, 0x3, 0x2, 0x2, 
+       0x6b, 0x19, 0x3, 0x2, 0x2, 0x2, 0x9, 0x1f, 0x2a, 0x36, 0x3a, 0x42, 
+       0x49, 0x53, 
+  };
+
+  _serializedATN.insert(_serializedATN.end(), serializedATNSegment0,
+    serializedATNSegment0 + sizeof(serializedATNSegment0) / sizeof(serializedATNSegment0[0]));
+
+
+  atn::ATNDeserializer deserializer;
+  _atn = deserializer.deserialize(_serializedATN);
+
+  size_t count = _atn.getNumberOfDecisions();
+  _decisionToDFA.reserve(count);
+  for (size_t i = 0; i < count; i++) { 
+    _decisionToDFA.emplace_back(_atn.getDecisionState(i), i);
+  }
 }
+
+TypeSignatureParser::Initializer TypeSignatureParser::_init;
