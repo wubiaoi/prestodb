@@ -11,7 +11,7 @@ grammar TypeSignature;
     #define isRowToken()         (UpCase(Token()) == "ROW")
     #define isMapToken()         (UpCase(Token()) == "MAP")
     #define isArrayToken()       (UpCase(Token()) == "ARRAY")
-    #define isVarToken()         (UpCase(Token()) == "VARCHAR" || UpCase(Token()) == "VARBINARY")
+    #define isVarToken()         (UpCase(Token()) == "VARCHAR" || UpCase(Token()) == "CHAR" || UpCase(Token()) == "VARBINARY")
     #define isDecimalToken()     (UpCase(Token()) == "DECIMAL")
 }
 
