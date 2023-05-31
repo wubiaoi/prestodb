@@ -19,9 +19,7 @@
 #include <re2/re2.h>
 #include <wangle/ssl/SSLContextConfig.h>
 #include "presto_cpp/external/json/json.hpp"
-#include "presto_cpp/main/common/Counters.h"
 #include "presto_cpp/main/http/HttpConstants.h"
-#include "velox/common/base/StatsReporter.h"
 
 namespace facebook::presto::http {
 
@@ -221,27 +219,42 @@ class DispatchingRequestHandlerFactory
       endpoints_;
 };
 
+class HttpConfig {
+ public:
+  explicit HttpConfig(
+      const folly::SocketAddress& address,
+      bool reusePort = false);
+
+  proxygen::HTTPServer::IPConfig ipConfig() const;
+
+ private:
+  const folly::SocketAddress address_;
+  const bool reusePort_{false};
+};
+
 class HttpsConfig {
  public:
   HttpsConfig(
-      const folly::SocketAddress& httpsAddress,
-      std::string certPath,
-      std::string keyPath,
-      std::string supportedCiphers);
+      const folly::SocketAddress& address,
+      const std::string& certPath,
+      const std::string& keyPath,
+      const std::string& supportedCiphers,
+      bool reusePort = false);
 
-  proxygen::HTTPServer::IPConfig getHttpsConfig() const;
+  proxygen::HTTPServer::IPConfig ipConfig() const;
 
  private:
-  const folly::SocketAddress httpsAddress_;
+  const folly::SocketAddress address_;
   const std::string certPath_;
   const std::string keyPath_;
   std::string supportedCiphers_;
+  const bool reusePort_;
 };
 
 class HttpServer {
  public:
   explicit HttpServer(
-      const folly::SocketAddress& httpAddress,
+      std::unique_ptr<HttpConfig> httpConfig,
       std::unique_ptr<HttpsConfig> httpsConfig = nullptr,
       int httpExecThreads = 8);
 
@@ -325,7 +338,7 @@ class HttpServer {
   }
 
  private:
-  const folly::SocketAddress httpAddress_;
+  const std::unique_ptr<HttpConfig> httpConfig_;
   const std::unique_ptr<HttpsConfig> httpsConfig_;
   int httpExecThreads_;
   std::unique_ptr<DispatchingRequestHandlerFactory> handlerFactory_;

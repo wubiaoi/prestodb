@@ -161,7 +161,8 @@ final class RowExpressionVerifier
             return false;
         }
 
-        return process(expected.getInnerExpression(), ((CallExpression) actual).getArguments().get(0));
+        LambdaDefinitionExpression lambdaExpression = (LambdaDefinitionExpression) ((CallExpression) actual).getArguments().get(0);
+        return process(expected.getInnerExpression(), lambdaExpression.getBody());
     }
 
     @Override
@@ -176,9 +177,6 @@ final class RowExpressionVerifier
                 return ((StringLiteral) literal).getValue().equals(actualString);
             }
             return getValueFromLiteral(literal).equals(String.valueOf(LiteralInterpreter.evaluate(TEST_SESSION.toConnectorSession(), (ConstantExpression) actual)));
-        }
-        if (actual instanceof VariableReferenceExpression && expected.getExpression() instanceof SymbolReference && expected.getType().equals(actual.getType().toString())) {
-            return visitSymbolReference((SymbolReference) expected.getExpression(), actual);
         }
         if (!(actual instanceof CallExpression) || !functionResolution.isCastFunction(((CallExpression) actual).getFunctionHandle())) {
             return false;

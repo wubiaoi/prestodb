@@ -31,6 +31,29 @@ void registerPrestoCppCounters() {
   REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterHTTPRequestLatencyMs, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterHttpClientPrestoExchangeNumOnBody,
+      facebook::velox::StatType::COUNT);
+  REPORT_ADD_HISTOGRAM_EXPORT_PERCENTILE(
+      kCounterHttpClientPrestoExchangeOnBodyBytes,
+      100,
+      0,
+      1000000,
+      50,
+      90,
+      95,
+      99,
+      100);
+  REPORT_ADD_HISTOGRAM_EXPORT_PERCENTILE(
+      kCounterPrestoExchangeSerializedPageSize,
+      100,
+      0,
+      10000000,
+      50,
+      90,
+      95,
+      99,
+      100);
+  REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterNumQueryContexts, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(kCounterNumTasks, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
@@ -61,13 +84,17 @@ void registerPrestoCppCounters() {
       kCounterPartitionedOutputBufferGetDataLatencyMs,
       facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterCumulativeUserCpuTimeMicros, facebook::velox::StatType::AVG);
+      kCounterOsUserCpuTimeMicros, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterCumulativeSystemCpuTimeMicros, facebook::velox::StatType::AVG);
+      kCounterOsSystemCpuTimeMicros, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterNumCumulativeSoftPageFaults, facebook::velox::StatType::AVG);
+      kCounterOsNumSoftPageFaults, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterNumCumulativeHardPageFaults, facebook::velox::StatType::AVG);
+      kCounterOsNumHardPageFaults, facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterOsNumVoluntaryContextSwitches, facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterOsNumForcedContextSwitches, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterMappedMemoryRawAllocBytesSmall, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
@@ -75,10 +102,12 @@ void registerPrestoCppCounters() {
       facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterMappedMemoryRawAllocBytesLarge, facebook::velox::StatType::AVG);
-  REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterExchangeSourceQueuedBytes, facebook::velox::StatType::AVG);
-  REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterExchangeSourcePeakQueuedBytes, facebook::velox::StatType::AVG);
+  REPORT_ADD_HISTOGRAM_EXPORT_PERCENTILE(
+      kCounterExchangeSourcePeakQueuedBytes,
+      (1024 * 1024), // bucket unit: 1MB
+      0,
+      (62l * 1024 * 1024 * 1024), // max bucket size: 62GB
+      100);
   REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterMemoryCacheNumEntries, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
@@ -134,27 +163,37 @@ void registerPrestoCppCounters() {
   REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterSsdCacheCumulativeReadEntries, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterSsdCacheReadEntries, facebook::velox::StatType::AVG);
-  REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterSsdCacheCumulativeReadBytes, facebook::velox::StatType::AVG);
-  REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterSsdCacheReadBytes, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterSsdCacheCumulativeWrittenEntries, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterSsdCacheWrittenEntries, facebook::velox::StatType::AVG);
-  REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterSsdCacheCumulativeWrittenBytes, facebook::velox::StatType::AVG);
-  REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterSsdCacheWrittenBytes, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterSsdCacheCumulativeCachedEntries, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterSsdCacheCachedEntries, facebook::velox::StatType::AVG);
-  REPORT_ADD_STAT_EXPORT_TYPE(
       kCounterSsdCacheCumulativeCachedBytes, facebook::velox::StatType::AVG);
   REPORT_ADD_STAT_EXPORT_TYPE(
-      kCounterSsdCacheCachedBytes, facebook::velox::StatType::AVG);
+      kCounterSsdCacheCumulativeOpenSsdErrors, facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterSsdCacheCumulativeOpenCheckpointErrors,
+      facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterSsdCacheCumulativeOpenLogErrors, facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterSsdCacheCumulativeDeleteCheckpointErrors,
+      facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterSsdCacheCumulativeGrowFileErrors, facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterSsdCacheCumulativeWriteSsdErrors, facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterSsdCacheCumulativeWriteCheckpointErrors,
+      facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterSsdCacheCumulativeReadSsdErrors, facebook::velox::StatType::AVG);
+  REPORT_ADD_STAT_EXPORT_TYPE(
+      kCounterSsdCacheCumulativeReadCheckpointErrors,
+      facebook::velox::StatType::AVG);
   // NOTE: Metrics type exporting for file handle cache counters are in
   // PeriodicTaskManager because they have dynamic names. The following counters
   // have their type exported there:

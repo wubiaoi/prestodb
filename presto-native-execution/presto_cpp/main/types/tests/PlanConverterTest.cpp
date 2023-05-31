@@ -62,7 +62,7 @@ std::shared_ptr<const core::PlanNode> assertToVeloxQueryPlan(
   std::string fragment = slurp(getDataPath(fileName));
 
   protocol::PlanFragment prestoPlan = json::parse(fragment);
-  auto pool = memory::getDefaultMemoryPool();
+  auto pool = memory::addDefaultLeafMemoryPool();
 
   VeloxInteractiveQueryPlanConverter converter(pool.get());
   return converter
@@ -78,7 +78,7 @@ std::shared_ptr<const core::PlanNode> assertToBatchVeloxQueryPlan(
   const std::string fragment = slurp(getDataPath(fileName));
 
   protocol::PlanFragment prestoPlan = json::parse(fragment);
-  auto pool = memory::getDefaultMemoryPool();
+  auto pool = memory::addDefaultLeafMemoryPool();
   VeloxBatchQueryPlanConverter converter(
       shuffleName, std::move(serializedShuffleWriteInfo), pool.get());
   return converter
@@ -155,14 +155,8 @@ TEST_F(PlanConverterTest, batchPlanConversion) {
           exec::test::TempDirectoryPath::create()->path,
           10)));
 
-  auto partitionedOutput =
-      std::dynamic_pointer_cast<const core::PartitionedOutputNode>(root);
-  ASSERT_NE(partitionedOutput, nullptr);
-  ASSERT_EQ(partitionedOutput->sources().size(), 1);
-
   auto shuffleWrite =
-      std::dynamic_pointer_cast<const operators::ShuffleWriteNode>(
-          partitionedOutput->sources().back());
+      std::dynamic_pointer_cast<const operators::ShuffleWriteNode>(root);
   ASSERT_NE(shuffleWrite, nullptr);
   ASSERT_EQ(shuffleWrite->sources().size(), 1);
 

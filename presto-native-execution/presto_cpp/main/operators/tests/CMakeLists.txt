@@ -9,13 +9,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+add_library(presto_operators_plan_builder PlanBuilder.cpp)
+
+target_link_libraries(presto_operators_plan_builder velox_core)
+
 add_executable(presto_operators_test PlanNodeSerdeTest.cpp
-                                     UnsaferowShuffleTest.cpp)
+                                     UnsafeRowShuffleTest.cpp)
 
 add_test(presto_operators_test presto_operators_test)
 
 target_link_libraries(
   presto_operators_test
+  presto_operators_plan_builder
   presto_operators
   presto_protocol
   presto_type_converter

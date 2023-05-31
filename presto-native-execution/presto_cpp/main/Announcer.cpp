@@ -34,15 +34,7 @@ std::string announcementBody(
   std::string id =
       boost::lexical_cast<std::string>(boost::uuids::random_generator()());
 
-  std::ostringstream connectors;
-  for (int i = 0; i < connectorIds.size(); i++) {
-    if (i > 0) {
-      connectors << ",";
-    }
-    connectors << connectorIds[i];
-  }
-
-  auto uriScheme = useHttps ? "https" : "http";
+  const auto uriScheme = useHttps ? "https" : "http";
 
   nlohmann::json body = {
       {"environment", environment},
@@ -54,7 +46,7 @@ std::string announcementBody(
          {"properties",
           {{"node_version", nodeVersion},
            {"coordinator", false},
-           {"connectorIds", connectors.str()},
+           {"connectorIds", folly::join(',', connectorIds)},
            {uriScheme,
             fmt::format("{}://{}:{}", uriScheme, address, port)}}}}}}};
   return body.dump();
@@ -82,14 +74,16 @@ Announcer::Announcer(
     const std::string& address,
     bool useHttps,
     int port,
-    std::function<folly::SocketAddress()> discoveryAddressLookup,
+    const std::shared_ptr<CoordinatorDiscoverer>& coordinatorDiscoverer,
     const std::string& nodeVersion,
     const std::string& environment,
     const std::string& nodeId,
     const std::string& nodeLocation,
     const std::vector<std::string>& connectorIds,
-    uint64_t frequencyMs)
-    : discoveryAddressLookup_(std::move(discoveryAddressLookup)),
+    uint64_t frequencyMs,
+    const std::string& clientCertAndKeyPath,
+    const std::string& ciphers)
+    : coordinatorDiscoverer_(coordinatorDiscoverer),
       frequencyMs_(frequencyMs),
       announcementBody_(announcementBody(
           address,
@@ -101,8 +95,10 @@ Announcer::Announcer(
           connectorIds)),
       announcementRequest_(
           announcementRequest(address, port, nodeId, announcementBody_)),
-      pool_(velox::memory::getDefaultMemoryPool("Announcer")),
-      eventBaseThread_(false /*autostart*/) {}
+      pool_(velox::memory::addDefaultLeafMemoryPool("Announcer")),
+      eventBaseThread_(false /*autostart*/),
+      clientCertAndKeyPath_(clientCertAndKeyPath),
+      ciphers_(ciphers) {}
 
 Announcer::~Announcer() {
   stop();
@@ -129,7 +125,7 @@ void Announcer::makeAnnouncement() {
   }
 
   try {
-    auto newAddress = discoveryAddressLookup_();
+    auto newAddress = coordinatorDiscoverer_->updateAddress();
     if (newAddress != address_) {
       LOG(INFO) << "Discovery service changed to " << newAddress.getAddressStr()
                 << ":" << newAddress.getPort();
@@ -137,7 +133,9 @@ void Announcer::makeAnnouncement() {
       client_ = std::make_unique<http::HttpClient>(
           eventBaseThread_.getEventBase(),
           address_,
-          std::chrono::milliseconds(10'000));
+          std::chrono::milliseconds(10'000),
+          clientCertAndKeyPath_,
+          ciphers_);
     }
   } catch (const std::exception& ex) {
     LOG(WARNING) << "Error occurred during announcement run: " << ex.what();

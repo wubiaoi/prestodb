@@ -95,6 +95,11 @@ public final class Expressions
         return COMPARISON_FUNCTIONS.contains(callExpression.getFunctionHandle().getName());
     }
 
+    public static CallExpression not(FunctionAndTypeManager functionAndTypeManager, RowExpression rowExpression)
+    {
+        return call(functionAndTypeManager, "not", BOOLEAN, rowExpression);
+    }
+
     public static CallExpression call(String displayName, FunctionHandle functionHandle, Type returnType, RowExpression... arguments)
     {
         return call(displayName, functionHandle, returnType, asList(arguments));
@@ -135,6 +140,12 @@ public final class Expressions
     {
         FunctionHandle functionHandle = functionAndTypeResolver.lookupFunction(name, fromTypes(Arrays.stream(arguments).map(RowExpression::getType).collect(toImmutableList())));
         return call(name, functionHandle, returnType, arguments);
+    }
+
+    public static CallExpression callOperator(FunctionAndTypeResolver functionAndTypeResolver, OperatorType operatorType, Type returnType, RowExpression... arguments)
+    {
+        FunctionHandle functionHandle = functionAndTypeResolver.resolveOperator(operatorType, fromTypes(Arrays.stream(arguments).map(RowExpression::getType).collect(toImmutableList())));
+        return call(operatorType.name(), functionHandle, returnType, arguments);
     }
 
     public static RowExpression searchedCaseExpression(List<RowExpression> whenClauses, Optional<RowExpression> defaultValue)

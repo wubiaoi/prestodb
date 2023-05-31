@@ -29,6 +29,7 @@ import com.facebook.presto.sql.planner.LogicalPlanner;
 import com.google.inject.Inject;
 
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
 
 import static com.facebook.presto.sql.analyzer.utils.ParameterUtils.parameterExtractor;
 import static com.google.common.base.Preconditions.checkState;
@@ -41,17 +42,28 @@ public class BuiltInQueryAnalyzer
     private final SqlParser sqlParser;
     private final AccessControl accessControl;
     private final Optional<QueryExplainer> queryExplainer;
+    private final ExecutorService metadataExtractorExecutor;
 
     @Inject
-    public BuiltInQueryAnalyzer(Metadata metadata, SqlParser sqlParser, AccessControl accessControl, Optional<QueryExplainer> queryExplainer)
+    public BuiltInQueryAnalyzer(
+            Metadata metadata,
+            SqlParser sqlParser,
+            AccessControl accessControl,
+            Optional<QueryExplainer> queryExplainer,
+            @ForMetadataExtractor ExecutorService metadataExtractorExecutor)
     {
         this.metadata = requireNonNull(metadata, "metadata is null");
         this.sqlParser = requireNonNull(sqlParser, "sqlParser is null");
         this.accessControl = requireNonNull(accessControl, "accessControl is null");
         this.queryExplainer = requireNonNull(queryExplainer, "query explainer is null");
+        this.metadataExtractorExecutor = requireNonNull(metadataExtractorExecutor, "metadataExtractorExecutor is null");
     }
 
-    public static BuiltInAnalyzerContext getBuiltInAnalyzerContext(MetadataResolver metadataResolver, PlanNodeIdAllocator idAllocator, VariableAllocator variableAllocator, Session session)
+    public static BuiltInAnalyzerContext getBuiltInAnalyzerContext(
+            MetadataResolver metadataResolver,
+            PlanNodeIdAllocator idAllocator,
+            VariableAllocator variableAllocator,
+            Session session)
     {
         return new BuiltInAnalyzerContext(metadataResolver, idAllocator, variableAllocator, session);
     }
@@ -75,7 +87,8 @@ public class BuiltInQueryAnalyzer
                 queryExplainer,
                 builtInPreparedQuery.getParameters(),
                 parameterExtractor(builtInPreparedQuery.getStatement(), builtInPreparedQuery.getParameters()),
-                session.getWarningCollector());
+                session.getWarningCollector(),
+                Optional.of(metadataExtractorExecutor));
 
         Analysis analysis = analyzer.analyzeSemantic(((BuiltInQueryPreparer.BuiltInPreparedQuery) preparedQuery).getStatement(), false);
         return new BuiltInQueryAnalysis(analysis);
@@ -85,6 +98,6 @@ public class BuiltInQueryAnalyzer
     public PlanNode plan(AnalyzerContext analyzerContext, QueryAnalysis queryAnalysis)
     {
         checkState(analyzerContext instanceof BuiltInAnalyzerContext, "analyzerContext should be an instance of BuiltInAnalyzerContext");
-        return new LogicalPlanner(((BuiltInAnalyzerContext) analyzerContext).getSession(), analyzerContext.getIdAllocator(), metadata, analyzerContext.getVariableAllocator()).plan(((BuiltInQueryAnalysis) queryAnalysis).getAnalysis());
+        return new LogicalPlanner(((BuiltInAnalyzerContext) analyzerContext).getSession(), analyzerContext.getIdAllocator(), metadata, analyzerContext.getVariableAllocator(), sqlParser).plan(((BuiltInQueryAnalysis) queryAnalysis).getAnalysis());
     }
 }

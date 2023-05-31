@@ -20,9 +20,11 @@ add_library(
   presto_server_lib
   Announcer.cpp
   CPUMon.cpp
+  CoordinatorDiscoverer.cpp
   PeriodicTaskManager.cpp
   PrestoExchangeSource.cpp
   PrestoServer.cpp
+  PrestoServerOperations.cpp
   PrestoTask.cpp
   QueryContextManager.cpp
   ServerOperation.cpp

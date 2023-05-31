@@ -13,11 +13,11 @@
  */
 #pragma once
 
-#include <chrono>
+#include <folly/SocketAddress.h>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include "velox/core/Context.h"
+#include "velox/core/Config.h"
 
 namespace facebook::presto {
 
@@ -28,6 +28,26 @@ class ConfigBase {
   /// @param filePath Path to configuration file.
   void initialize(const std::string& filePath);
 
+  /// Uses a config object already materialized.
+  void initialize(std::unique_ptr<velox::Config>&& config) {
+    config_ = std::move(config);
+  }
+
+  /// Registers an extra property in the config.
+  /// Returns true if succeeded, false if failed (due to the property already
+  /// registered).
+  bool registerProperty(
+      const std::string& propertyName,
+      const folly::Optional<std::string>& defaultValue = {});
+
+  /// Adds or replaces value at the given key. Can be used by debugging or
+  /// testing code.
+  /// Returns previous value if there was any.
+  folly::Optional<std::string> setValue(
+      const std::string& propertyName,
+      const std::string& value);
+
+  /// Returns a required value of the requested type. Fails if no value found.
   template <typename T>
   T requiredProperty(const std::string& propertyName) const {
     auto propertyValue = config_->get<T>(propertyName);
@@ -39,6 +59,13 @@ class ConfigBase {
     }
   }
 
+  /// Returns a required value of the requested type. Fails if no value found.
+  template <typename T>
+  T requiredProperty(std::string_view propertyName) const {
+    return requiredProperty<T>(std::string{propertyName});
+  }
+
+  /// Returns a required value of the string type. Fails if no value found.
   std::string requiredProperty(const std::string& propertyName) const {
     auto propertyValue = config_->get(propertyName);
     if (propertyValue.has_value()) {
@@ -49,37 +76,83 @@ class ConfigBase {
     }
   }
 
+  /// Returns a required value of the requested type. Fails if no value found.
+  std::string requiredProperty(std::string_view propertyName) const {
+    return requiredProperty(std::string{propertyName});
+  }
+
+  /// Returns optional value of the requested type. Can return folly::none.
   template <typename T>
   folly::Optional<T> optionalProperty(const std::string& propertyName) const {
-    return config_->get<T>(propertyName);
+    auto val = config_->get(propertyName);
+    if (!val.hasValue()) {
+      const auto it = registeredProps_.find(propertyName);
+      if (it != registeredProps_.end()) {
+        val = it->second;
+      }
+    }
+    if (val.hasValue()) {
+      return folly::to<T>(val.value());
+    }
+    return folly::none;
   }
 
+  /// Returns optional value of the requested type. Can return folly::none.
+  template <typename T>
+  folly::Optional<T> optionalProperty(std::string_view propertyName) const {
+    return optionalProperty<T>(std::string{propertyName});
+  }
+
+  /// Returns optional value of the string type. Can return folly::none.
   folly::Optional<std::string> optionalProperty(
       const std::string& propertyName) const {
-    return config_->get(propertyName);
+    auto val = config_->get(propertyName);
+    if (!val.hasValue()) {
+      const auto it = registeredProps_.find(propertyName);
+      if (it != registeredProps_.end()) {
+        return it->second;
+      }
+    }
+    return val;
   }
 
-  const std::unordered_map<std::string, std::string>& values() const {
-    return config_->values();
+  /// Returns optional value of the string type. Can return folly::none.
+  folly::Optional<std::string> optionalProperty(
+      std::string_view propertyName) const {
+    return optionalProperty(std::string{propertyName});
+  }
+
+  /// Returns copy of the config values map.
+  std::unordered_map<std::string, std::string> values() const {
+    return config_->valuesCopy();
   }
 
  protected:
   ConfigBase();
 
+  // Check if all properties are registered.
+  void checkRegisteredProperties(
+      const std::unordered_map<std::string, std::string>& values);
+
   std::unique_ptr<velox::Config> config_;
   std::string filePath_;
+  // Map of registered properties with their default values.
+  std::unordered_map<std::string, folly::Optional<std::string>>
+      registeredProps_;
 };
 
 /// Provides access to system properties defined in config.properties file.
 class SystemConfig : public ConfigBase {
  public:
+  static constexpr std::string_view kMutableConfig{"mutable-config"};
   static constexpr std::string_view kPrestoVersion{"presto.version"};
   static constexpr std::string_view kHttpServerHttpPort{
       "http-server.http.port"};
-  // This option allows a port closed in TIME_WAIT state to be reused
-  // immediately upon worker startup. This property is mainly used by batch
-  // processing. For interactive query, the worker uses a dynamic port upon
-  // startup.
+
+  /// This option allows a port closed in TIME_WAIT state to be reused
+  /// immediately upon worker startup. This property is mainly used by batch
+  /// processing. For interactive query, the worker uses a dynamic port upon
+  /// startup.
   static constexpr std::string_view kHttpServerReusePort{
       "http-server.reuse-port"};
   static constexpr std::string_view kDiscoveryUri{"discovery.uri"};
@@ -98,17 +171,29 @@ class SystemConfig : public ConfigBase {
   static constexpr std::string_view kHttpsKeyPath{"https-key-path"};
   static constexpr std::string_view kHttpsClientCertAndKeyPath{
       "https-client-cert-key-path"};
+
+  /// Number of threads for async io. Disabled if zero.
   static constexpr std::string_view kNumIoThreads{"num-io-threads"};
+  static constexpr std::string_view kNumConnectorIoThreads{
+      "num-connector-io-threads"};
   static constexpr std::string_view kNumQueryThreads{"num-query-threads"};
   static constexpr std::string_view kNumSpillThreads{"num-spill-threads"};
-  static constexpr std::string_view kSpillerSpillPath =
-      "experimental.spiller-spill-path";
+  static constexpr std::string_view kSpillerSpillPath{
+      "experimental.spiller-spill-path"};
   static constexpr std::string_view kShutdownOnsetSec{"shutdown-onset-sec"};
   static constexpr std::string_view kSystemMemoryGb{"system-memory-gb"};
+  static constexpr std::string_view kAsyncDataCacheEnabled{
+      "async-data-cache-enabled"};
   static constexpr std::string_view kAsyncCacheSsdGb{"async-cache-ssd-gb"};
   static constexpr std::string_view kAsyncCacheSsdCheckpointGb{
       "async-cache-ssd-checkpoint-gb"};
   static constexpr std::string_view kAsyncCacheSsdPath{"async-cache-ssd-path"};
+
+  /// In file systems, such as btrfs, supporting cow (copy on write), the ssd
+  /// cache can use all ssd space and stop working. To prevent that, use this
+  /// option to disable cow for cache files.
+  static constexpr std::string_view kAsyncCacheSsdDisableFileCow{
+      "async-cache-ssd-disable-file-cow"};
   static constexpr std::string_view kEnableSerializedPageChecksum{
       "enable-serialized-page-checksum"};
   static constexpr std::string_view kUseMmapArena{"use-mmap-arena"};
@@ -124,40 +209,28 @@ class SystemConfig : public ConfigBase {
   static constexpr std::string_view kShuffleName{"shuffle.name"};
   static constexpr std::string_view kHttpEnableAccessLog{
       "http-server.enable-access-log"};
-  static constexpr std::string_view kHttpEnableStatFilter{
+  static constexpr std::string_view kHttpEnableStatsFilter{
       "http-server.enable-stats-filter"};
+  static constexpr std::string_view kRegisterTestFunctions{
+      "register-test-functions"};
+
   /// The options to configure the max quantized memory allocation size to store
   /// the received http response data.
   static constexpr std::string_view kHttpMaxAllocateBytes{
       "http-server.max-response-allocate-bytes"};
-  // Most server nodes today (May 2022) have at least 16 cores.
-  // Setting the default maximum drivers per task to this value will
-  // provide a better off-shelf experience.
-  static constexpr int32_t kMaxDriversPerTaskDefault = 16;
-  static constexpr bool kHttpServerReusePortDefault = false;
-  static constexpr int32_t kConcurrentLifespansPerTaskDefault = 1;
-  static constexpr int32_t kHttpExecThreadsDefault = 8;
-  static constexpr bool kHttpServerHttpsEnabledDefault = false;
-  static constexpr std::string_view kHttpsSupportedCiphersDefault{
-      "AES128-SHA,AES128-SHA256,AES256-GCM-SHA384"};
-  static constexpr int32_t kNumIoThreadsDefault = 30;
-  static constexpr int32_t kShutdownOnsetSecDefault = 10;
-  static constexpr int32_t kSystemMemoryGbDefault = 40;
-  static constexpr int32_t kMmapArenaCapacityRatioDefault = 10;
-  static constexpr uint64_t kLocalShuffleMaxPartitionBytesDefault = 1 << 15;
-  static constexpr uint64_t kAsyncCacheSsdGbDefault = 0;
-  static constexpr uint64_t kAsyncCacheSsdCheckpointGbDefault = 0;
-  static constexpr std::string_view kAsyncCacheSsdPathDefault{
-      "/mnt/flash/async_cache."};
-  static constexpr std::string_view kShuffleNameDefault{""};
-  static constexpr bool kEnableSerializedPageChecksumDefault = true;
-  static constexpr bool kEnableVeloxTaskLoggingDefault = false;
-  static constexpr bool kEnableVeloxExprSetLoggingDefault = false;
-  static constexpr bool kUseMmapArenaDefault = false;
-  static constexpr bool kUseMmapAllocatorDefault{true};
-  static constexpr bool kHttpEnableAccessLogDefault = false;
-  static constexpr bool kHttpEnableStatsFilterDefault = false;
-  static constexpr uint64_t kHttpMaxAllocateBytesDefault = 64 << 10;
+  static constexpr std::string_view kQueryMaxMemoryPerNode{
+      "query.max-memory-per-node"};
+
+  /// This system property is added for not crashing the cluster when memory
+  /// leak is detected. The check should be disabled in production cluster.
+  static constexpr std::string_view kEnableMemoryLeakCheck{
+      "enable-memory-leak-check"};
+
+  /// Port used by the remote function thrift server.
+  static constexpr std::string_view kRemoteFunctionServerThriftPort{
+      "remote-function-server.thrift.port"};
+
+  SystemConfig();
 
   static SystemConfig* instance();
 
@@ -165,21 +238,40 @@ class SystemConfig : public ConfigBase {
 
   bool httpServerReusePort() const;
 
-  bool enableHttps() const;
+  bool httpServerHttpsEnabled() const;
 
   int httpServerHttpsPort() const;
 
+  // A list of ciphers (comma separated) that are supported by
+  // server and client. Note Java and folly::SSLContext use different names to
+  // refer to the same cipher. For e.g. TLS_RSA_WITH_AES_256_GCM_SHA384 in Java
+  // and AES256-GCM-SHA384 in folly::SSLContext. More details can be found here:
+  // https://www.openssl.org/docs/manmaster/man1/openssl-ciphers.html. The
+  // ciphers enable worker to worker, worker to coordinator and
+  // coordinator to worker communication. At least one cipher needs to be
+  // shared for the above 3 communication to work.
   std::string httpsSupportedCiphers() const;
 
-  std::optional<std::string> httpsCertPath() const;
+  // Note: Java packages cert and key in combined JKS file. But CPP requires
+  // them separately. The HTTPS provides integrity and not
+  // security(authentication/authorization). But the HTTPS will protect against
+  // data corruption by bad router and man in middle attacks.
+  folly::Optional<std::string> httpsCertPath() const;
 
-  std::optional<std::string> httpsKeyPath() const;
+  folly::Optional<std::string> httpsKeyPath() const;
 
-  std::optional<std::string> httpsClientCertAndKeyPath() const;
+  // Http client expects the cert and key file to be packed into a single file
+  // (most commonly .pem format) The file should not be password protected. If
+  // required, break this down to 3 configs one for cert,key and password later.
+  folly::Optional<std::string> httpsClientCertAndKeyPath() const;
+
+  bool mutableConfig() const;
 
   std::string prestoVersion() const;
 
-  std::optional<std::string> discoveryUri() const;
+  folly::Optional<std::string> discoveryUri() const;
+
+  folly::Optional<folly::SocketAddress> remoteFunctionServerLocation() const;
 
   int32_t maxDriversPerTask() const;
 
@@ -187,18 +279,23 @@ class SystemConfig : public ConfigBase {
 
   int32_t httpExecThreads() const;
 
-  // Process-wide number of query execution threads
+  /// Size of global IO executor.
   int32_t numIoThreads() const;
+
+  /// Size of IO executor for connectors to do preload/prefetch
+  int32_t numConnectorIoThreads() const;
 
   int32_t numQueryThreads() const;
 
   int32_t numSpillThreads() const;
 
-  std::string spillerSpillPath() const;
+  folly::Optional<std::string> spillerSpillPath() const;
 
   int32_t shutdownOnsetSec() const;
 
   int32_t systemMemoryGb() const;
+
+  bool asyncDataCacheEnabled() const;
 
   uint64_t asyncCacheSsdGb() const;
 
@@ -207,6 +304,8 @@ class SystemConfig : public ConfigBase {
   uint64_t localShuffleMaxPartitionBytes() const;
 
   std::string asyncCacheSsdPath() const;
+
+  bool asyncCacheSsdDisableFileCow() const;
 
   std::string shuffleName() const;
 
@@ -226,7 +325,13 @@ class SystemConfig : public ConfigBase {
 
   bool enableHttpStatsFilter() const;
 
+  bool registerTestFunctions() const;
+
   uint64_t httpMaxAllocateBytes() const;
+
+  uint64_t queryMaxMemoryPerNode() const;
+
+  bool enableMemoryLeakCheck() const;
 };
 
 /// Provides access to node properties defined in node.properties file.
@@ -237,6 +342,8 @@ class NodeConfig : public ConfigBase {
   static constexpr std::string_view kNodeIp{"node.ip"};
   static constexpr std::string_view kNodeLocation{"node.location"};
   static constexpr std::string_view kNodeMemoryGb{"node.memory_gb"};
+
+  NodeConfig();
 
   static NodeConfig* instance();
 
@@ -251,6 +358,43 @@ class NodeConfig : public ConfigBase {
 
   uint64_t nodeMemoryGb(
       const std::function<uint64_t()>& defaultNodeMemoryGb = nullptr) const;
+};
+
+/// Used only in the single instance as the source of the initial properties for
+/// velox::QueryConfig. Not designed for actual property access during a query
+/// run.
+/// Values can be modified via Server Operation command if the SystemConfig has
+/// kMutableConfig option set to true (so this config must be created after the
+/// SystemConfig has been initialized).
+class BaseVeloxQueryConfig {
+ public:
+  BaseVeloxQueryConfig();
+
+  static BaseVeloxQueryConfig* instance();
+
+  /// If this config is mutable.
+  bool isMutable() const {
+    return mutable_;
+  }
+
+  /// Returns copy of the config values map.
+  std::unordered_map<std::string, std::string> values() const {
+    return *(values_.rlock());
+  }
+
+  /// Adds or replaces value at the given key. Can be used by debugging or
+  /// testing code.
+  /// Returns previous value if there was any.
+  folly::Optional<std::string> setValue(
+      const std::string& propertyName,
+      const std::string& value);
+
+  /// Returns the current value of the property.
+  folly::Optional<std::string> getValue(const std::string& propertyName) const;
+
+ private:
+  const bool mutable_;
+  folly::Synchronized<std::unordered_map<std::string, std::string>> values_;
 };
 
 } // namespace facebook::presto

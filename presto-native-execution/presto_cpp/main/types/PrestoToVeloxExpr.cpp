@@ -104,6 +104,9 @@ velox::variant VeloxExprConverter::getConstantValue(
   }
 
   switch (typeKind) {
+    case TypeKind::HUGEINT:
+      return valueVector->as<velox::SimpleVector<velox::int128_t>>()->valueAt(
+          0);
     case TypeKind::BIGINT:
       return valueVector->as<velox::SimpleVector<int64_t>>()->valueAt(0);
     case TypeKind::INTEGER:
@@ -393,14 +396,6 @@ std::shared_ptr<const ConstantTypedExpr> VeloxExprConverter::toVeloxExpr(
           std::make_shared<velox::ConstantVector<velox::ComplexType>>(
               pool_, 1, 0, valueVector));
     }
-    case TypeKind::SHORT_DECIMAL:
-    case TypeKind::LONG_DECIMAL: {
-      auto valueVector =
-          protocol::readBlock(type, pexpr->valueBlock.data, pool_);
-      return std::make_shared<ConstantTypedExpr>(
-          velox::BaseVector::wrapInConstant(
-              1 /*length*/, 0 /*index*/, valueVector));
-    }
     default: {
       const auto value = getConstantValue(type, pexpr->valueBlock);
 
@@ -480,15 +475,13 @@ TypedExprPtr convertBindExpr(const std::vector<TypedExprPtr>& args) {
   VELOX_CHECK(lambda, "Last argument of a BIND must be a lambda expression");
 
   // replace first N arguments of the lambda with bind variables
-  std::unordered_map<std::string, std::string> mapping;
+  std::unordered_map<std::string, TypedExprPtr> mapping;
   mapping.reserve(args.size() - 1);
 
   const auto& signature = lambda->signature();
 
   for (auto i = 0; i < args.size() - 1; i++) {
-    const auto& field =
-        std::dynamic_pointer_cast<const FieldAccessTypedExpr>(args[i]);
-    mapping.insert({signature->nameOf(i), field->name()});
+    mapping.insert({signature->nameOf(i), args[i]});
   }
 
   auto numArgsLeft = signature->size() - (args.size() - 1);

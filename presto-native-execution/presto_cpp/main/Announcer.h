@@ -15,6 +15,7 @@
 
 #include <folly/io/async/EventBaseThread.h>
 #include <presto_cpp/main/http/HttpClient.h>
+#include "presto_cpp/main/CoordinatorDiscoverer.h"
 
 namespace facebook::presto {
 
@@ -24,13 +25,15 @@ class Announcer {
       const std::string& address,
       bool useHttps,
       int port,
-      std::function<folly::SocketAddress()> discoveryAddressLookup,
+      const std::shared_ptr<CoordinatorDiscoverer>& coordinatorDiscoverer,
       const std::string& nodeVersion,
       const std::string& environment,
       const std::string& nodeId,
       const std::string& nodeLocation,
       const std::vector<std::string>& connectorIds,
-      uint64_t frequencyMs);
+      uint64_t frequencyMs,
+      const std::string& clientCertAndKeyPath = "",
+      const std::string& ciphers = "");
 
   ~Announcer();
 
@@ -43,7 +46,7 @@ class Announcer {
 
   void scheduleNext();
 
-  const std::function<folly::SocketAddress()> discoveryAddressLookup_;
+  const std::shared_ptr<CoordinatorDiscoverer> coordinatorDiscoverer_;
   const uint64_t frequencyMs_;
   const std::string announcementBody_;
   const proxygen::HTTPMessage announcementRequest_;
@@ -52,6 +55,8 @@ class Announcer {
   std::unique_ptr<http::HttpClient> client_;
   std::atomic_bool stopped_{true};
   folly::EventBaseThread eventBaseThread_;
+  const std::string clientCertAndKeyPath_;
+  const std::string ciphers_;
 };
 
 } // namespace facebook::presto

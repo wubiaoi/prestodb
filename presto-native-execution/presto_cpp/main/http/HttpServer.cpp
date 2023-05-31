@@ -12,9 +12,11 @@
  * limitations under the License.
  */
 
-#include "presto_cpp/main/http/HttpServer.h"
 #include <algorithm>
+
 #include "presto_cpp/main/common/Configs.h"
+#include "presto_cpp/main/common/Utils.h"
+#include "presto_cpp/main/http/HttpServer.h"
 
 namespace facebook::presto::http {
 
@@ -76,22 +78,38 @@ void sendErrorResponse(
       .sendWithEOM();
 }
 
+HttpConfig::HttpConfig(const folly::SocketAddress& address, bool reusePort)
+    : address_(address), reusePort_(reusePort) {}
+
+proxygen::HTTPServer::IPConfig HttpConfig::ipConfig() const {
+  proxygen::HTTPServer::IPConfig ipConfig{
+      address_, proxygen::HTTPServer::Protocol::HTTP};
+  if (reusePort_) {
+    folly::SocketOptionKey portReuseOpt = {SOL_SOCKET, SO_REUSEPORT};
+    ipConfig.acceptorSocketOptions.emplace();
+    ipConfig.acceptorSocketOptions->insert({portReuseOpt, 1});
+  }
+  return ipConfig;
+}
+
 HttpsConfig::HttpsConfig(
-    const folly::SocketAddress& httpsAddress,
-    std::string certPath,
-    std::string keyPath,
-    std::string supportedCiphers)
-    : httpsAddress_(httpsAddress),
+    const folly::SocketAddress& address,
+    const std::string& certPath,
+    const std::string& keyPath,
+    const std::string& supportedCiphers,
+    bool reusePort)
+    : address_(address),
       certPath_(certPath),
       keyPath_(keyPath),
-      supportedCiphers_(supportedCiphers) {
+      supportedCiphers_(supportedCiphers),
+      reusePort_(reusePort) {
   // Wangle separates ciphers by ":" where in the config it's separated with ","
   std::replace(supportedCiphers_.begin(), supportedCiphers_.end(), ',', ':');
 }
 
-proxygen::HTTPServer::IPConfig HttpsConfig::getHttpsConfig() const {
+proxygen::HTTPServer::IPConfig HttpsConfig::ipConfig() const {
   proxygen::HTTPServer::IPConfig ipConfig{
-      httpsAddress_, proxygen::HTTPServer::Protocol::HTTP};
+      address_, proxygen::HTTPServer::Protocol::HTTP};
 
   wangle::SSLContextConfig sslCfg;
   sslCfg.isDefault = true;
@@ -101,20 +119,28 @@ proxygen::HTTPServer::IPConfig HttpsConfig::getHttpsConfig() const {
   sslCfg.sslCiphers = supportedCiphers_;
 
   ipConfig.sslConfigs.push_back(sslCfg);
+
+  if (reusePort_) {
+    folly::SocketOptionKey portReuseOpt = {SOL_SOCKET, SO_REUSEPORT};
+    ipConfig.acceptorSocketOptions.emplace();
+    ipConfig.acceptorSocketOptions->insert({portReuseOpt, 1});
+  }
   return ipConfig;
 }
 
 HttpServer::HttpServer(
-    const folly::SocketAddress& httpAddress,
+    std::unique_ptr<HttpConfig> httpConfig,
     std::unique_ptr<HttpsConfig> httpsConfig,
     int httpExecThreads)
-    : httpAddress_(httpAddress),
+    : httpConfig_(std::move(httpConfig)),
       httpsConfig_(std::move(httpsConfig)),
       httpExecThreads_(httpExecThreads),
       handlerFactory_(std::make_unique<DispatchingRequestHandlerFactory>()),
       httpExecutor_{std::make_shared<folly::IOThreadPoolExecutor>(
           httpExecThreads,
-          std::make_shared<folly::NamedThreadFactory>("HTTPSrvExec"))} {}
+          std::make_shared<folly::NamedThreadFactory>("HTTPSrvExec"))} {
+  VELOX_CHECK((httpConfig_ != nullptr) || (httpsConfig_ != nullptr));
+}
 
 proxygen::RequestHandler*
 DispatchingRequestHandlerFactory::EndPoint::checkAndApply(
@@ -191,15 +217,6 @@ void HttpServer::start(
     std::vector<std::unique_ptr<proxygen::RequestHandlerFactory>> filters,
     std::function<void(proxygen::HTTPServer* /*server*/)> onSuccess,
     std::function<void(std::exception_ptr)> onError) {
-  proxygen::HTTPServer::IPConfig ipConfig{
-      httpAddress_, proxygen::HTTPServer::Protocol::HTTP};
-
-  if (SystemConfig::instance()->httpServerReusePort()) {
-    folly::SocketOptionKey portReuseOpt = {SOL_SOCKET, SO_REUSEPORT};
-    ipConfig.acceptorSocketOptions.emplace();
-    ipConfig.acceptorSocketOptions->insert({portReuseOpt, 1});
-  }
-
   proxygen::HTTPServerOptions options;
   // The 'threads' field is not used when we provide our own executor (see us
   // passing httpExecutor_ below) to the start() method. In that case we create
@@ -228,15 +245,19 @@ void HttpServer::start(
 
   server_ = std::make_unique<proxygen::HTTPServer>(std::move(options));
 
-  std::vector<proxygen::HTTPServer::IPConfig> ips{ipConfig};
+  std::vector<proxygen::HTTPServer::IPConfig> ipConfigs;
 
-  if (httpsConfig_ != nullptr) {
-    ips.push_back(httpsConfig_->getHttpsConfig());
+  if (httpConfig_ != nullptr) {
+    ipConfigs.push_back(httpConfig_->ipConfig());
   }
 
-  server_->bind(ips);
+  if (httpsConfig_ != nullptr) {
+    ipConfigs.push_back(httpsConfig_->ipConfig());
+  }
 
-  LOG(INFO) << "STARTUP: proxygen::HTTPServer::start()";
+  server_->bind(ipConfigs);
+
+  PRESTO_STARTUP_LOG(INFO) << "proxygen::HTTPServer::start()";
   server_->start(
       [&]() {
         if (onSuccess) {

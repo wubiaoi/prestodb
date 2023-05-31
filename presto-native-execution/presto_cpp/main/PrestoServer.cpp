@@ -17,15 +17,17 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/lexical_cast.hpp>
 #include <glog/logging.h>
+#include "CoordinatorDiscoverer.h"
 #include "presto_cpp/main/Announcer.h"
 #include "presto_cpp/main/PeriodicTaskManager.h"
 #include "presto_cpp/main/PrestoExchangeSource.h"
-#include "presto_cpp/main/ServerOperation.h"
+#include "presto_cpp/main/PrestoServerOperations.h"
 #include "presto_cpp/main/SignalHandler.h"
 #include "presto_cpp/main/TaskResource.h"
 #include "presto_cpp/main/common/ConfigReader.h"
 #include "presto_cpp/main/common/Configs.h"
 #include "presto_cpp/main/common/Counters.h"
+#include "presto_cpp/main/common/Utils.h"
 #include "presto_cpp/main/connectors/hive/storage_adapters/FileSystems.h"
 #include "presto_cpp/main/http/HttpServer.h"
 #include "presto_cpp/main/http/filters/AccessLogFilter.h"
@@ -45,7 +47,7 @@
 #include "velox/common/memory/MmapAllocator.h"
 #include "velox/connectors/Connector.h"
 #include "velox/connectors/hive/HiveConnector.h"
-#include "velox/core/Context.h"
+#include "velox/core/Config.h"
 #include "velox/dwio/dwrf/reader/DwrfReader.h"
 #include "velox/exec/PartitionedOutputBufferManager.h"
 #include "velox/functions/prestosql/aggregates/RegisterAggregateFunctions.h"
@@ -67,8 +69,6 @@ constexpr char const* kHttps = "https";
 constexpr char const* kTaskUriFormat =
     "{}://{}:{}"; // protocol, address and port
 constexpr char const* kConnectorName = "connector.name";
-constexpr char const* kCacheEnabled = "cache.enabled";
-constexpr char const* kCacheMaxCacheSize = "cache.max-cache-size";
 
 protocol::NodeState convertNodeState(presto::NodeState nodeState) {
   switch (nodeState) {
@@ -108,42 +108,6 @@ void enableChecksum() {
       });
 }
 
-std::string clearConnectorCache(proxygen::HTTPMessage* message) {
-  const auto name = message->getQueryParam("name");
-  const auto id = message->getQueryParam("id");
-  if (name == "hive") {
-    // ======== HiveConnector Operations ========
-    auto hiveConnector =
-        std::dynamic_pointer_cast<velox::connector::hive::HiveConnector>(
-            velox::connector::getConnector(id));
-    VELOX_USER_CHECK_NOT_NULL(
-        hiveConnector,
-        "No '{}' connector found for connector id '{}'",
-        name,
-        id);
-    return hiveConnector->clearFileHandleCache().toString();
-  }
-  VELOX_USER_FAIL("connector '{}' operation is not supported", name);
-}
-
-std::string getConnectorCacheStats(proxygen::HTTPMessage* message) {
-  const auto name = message->getQueryParam("name");
-  const auto id = message->getQueryParam("id");
-  if (name == "hive") {
-    // ======== HiveConnector Operations ========
-    auto hiveConnector =
-        std::dynamic_pointer_cast<velox::connector::hive::HiveConnector>(
-            velox::connector::getConnector(id));
-    VELOX_USER_CHECK_NOT_NULL(
-        hiveConnector,
-        "No '{}' connector found for connector id '{}'",
-        name,
-        id);
-    return hiveConnector->fileHandleCacheStats().toString();
-  }
-  VELOX_USER_FAIL("connector '{}' operation is not supported", name);
-}
-
 } // namespace
 
 PrestoServer::PrestoServer(const std::string& configDirectoryPath)
@@ -160,17 +124,24 @@ void PrestoServer::run() {
   int httpPort{0};
   int httpExecThreads{0};
 
-  std::string certPath, keyPath, ciphers;
+  std::string certPath;
+  std::string keyPath;
+  std::string ciphers;
+  std::string clientCertAndKeyPath;
   std::optional<int> httpsPort;
 
   try {
+    // Allow registering extra config properties before we load them from files.
+    registerExtraConfigProperties();
     systemConfig->initialize(
         fmt::format("{}/config.properties", configDirectoryPath_));
     nodeConfig->initialize(
         fmt::format("{}/node.properties", configDirectoryPath_));
+    // Create velox query config after we initialized system config.
+    BaseVeloxQueryConfig::instance();
 
     httpPort = systemConfig->httpServerHttpPort();
-    if (systemConfig->enableHttps()) {
+    if (systemConfig->httpServerHttpsEnabled()) {
       httpsPort = systemConfig->httpServerHttpsPort();
 
       ciphers = systemConfig->httpsSupportedCiphers();
@@ -197,6 +168,7 @@ void PrestoServer::run() {
         VELOX_USER_FAIL(
             "Https Client Certificates are not configured correctly");
       }
+      clientCertAndKeyPath = optionalClientCertPath.value();
     }
 
     nodeVersion_ = systemConfig->prestoVersion();
@@ -234,27 +206,35 @@ void PrestoServer::run() {
 
   folly::SocketAddress httpSocketAddress;
   httpSocketAddress.setFromLocalPort(httpPort);
-  LOG(INFO) << fmt::format(
-      "STARTUP: Starting server at {}:{} ({})",
+  PRESTO_STARTUP_LOG(INFO) << fmt::format(
+      "Starting server at {}:{} ({})",
       httpSocketAddress.getIPAddress().str(),
       httpPort,
       address_);
 
+  initializeCoordinatorDiscoverer();
   std::unique_ptr<Announcer> announcer;
-  if (auto discoveryAddressLookupFunc = discoveryAddressLookup()) {
+  if (coordinatorDiscoverer_ != nullptr &&
+      !coordinatorDiscoverer_->updateAddress().empty()) {
     announcer = std::make_unique<Announcer>(
         address_,
         httpsPort.has_value(),
         httpsPort.has_value() ? httpsPort.value() : httpPort,
-        discoveryAddressLookupFunc,
+        coordinatorDiscoverer_,
         nodeVersion_,
         environment_,
         nodeId_,
         nodeLocation_,
         catalogNames,
-        30'000 /*milliseconds*/);
+        30'000 /*milliseconds*/,
+        clientCertAndKeyPath,
+        ciphers);
     announcer->start();
   }
+
+  const bool reusePort = SystemConfig::instance()->httpServerReusePort();
+  auto httpConfig =
+      std::make_unique<http::HttpConfig>(httpSocketAddress, reusePort);
 
   std::unique_ptr<http::HttpsConfig> httpsConfig;
   if (httpsPort.has_value()) {
@@ -262,11 +242,11 @@ void PrestoServer::run() {
     httpsSocketAddress.setFromLocalPort(httpsPort.value());
 
     httpsConfig = std::make_unique<http::HttpsConfig>(
-        httpsSocketAddress, certPath, keyPath, ciphers);
+        httpsSocketAddress, certPath, keyPath, ciphers, reusePort);
   }
 
   httpServer_ = std::make_unique<http::HttpServer>(
-      httpSocketAddress, std::move(httpsConfig), httpExecThreads);
+      std::move(httpConfig), std::move(httpsConfig), httpExecThreads);
 
   httpServer_->registerPost(
       "/v1/memory",
@@ -317,18 +297,14 @@ void PrestoServer::run() {
   // The endpoint used by operation in production.
   httpServer_->registerGet(
       "/v1/operation/.*",
-      [server = this](
-          proxygen::HTTPMessage* message,
-          const std::vector<std::unique_ptr<folly::IOBuf>>& /*body*/,
-          proxygen::ResponseHandler* downstream) {
-        server->runOperation(message, downstream);
+      [](proxygen::HTTPMessage* message,
+         const std::vector<std::unique_ptr<folly::IOBuf>>& /*body*/,
+         proxygen::ResponseHandler* downstream) {
+        PrestoServerOperations::runOperation(message, downstream);
       });
 
-  static const std::string kPrestoDefaultPrefix{"presto.default."};
-  velox::functions::prestosql::registerAllScalarFunctions(kPrestoDefaultPrefix);
-  velox::aggregate::prestosql::registerAllAggregateFunctions(
-      kPrestoDefaultPrefix);
-  velox::window::prestosql::registerAllWindowFunctions(kPrestoDefaultPrefix);
+  registerFunctions();
+  registerRemoteFunctions();
   registerVectorSerdes();
   registerPrestoPlanNodeSerDe();
 
@@ -343,8 +319,8 @@ void PrestoServer::run() {
       velox::parquet::ParquetReaderType::NATIVE);
 #endif
 
-  taskManager_ = std::make_unique<TaskManager>(
-      systemConfig->values(), nodeConfig->values());
+  pool_ = velox::memory::addDefaultLeafMemoryPool();
+  taskManager_ = std::make_unique<TaskManager>();
 
   std::string taskUri;
   if (httpsPort.has_value()) {
@@ -355,7 +331,7 @@ void PrestoServer::run() {
 
   taskManager_->setBaseUri(taskUri);
   taskManager_->setNodeId(nodeId_);
-  taskResource_ = std::make_unique<TaskResource>(*taskManager_);
+  taskResource_ = std::make_unique<TaskResource>(*taskManager_, pool_.get());
   taskResource_->registerUris(*httpServer_);
   if (systemConfig->enableSerializedPageChecksum()) {
     enableChecksum();
@@ -373,20 +349,21 @@ void PrestoServer::run() {
     }
   }
 
-  LOG(INFO) << "STARTUP: Driver CPU executor has "
-            << driverCPUExecutor()->numThreads() << " threads.";
+  PRESTO_STARTUP_LOG(INFO) << "Driver CPU executor has "
+                           << driverCPUExecutor()->numThreads() << " threads.";
   if (httpServer_->getExecutor()) {
-    LOG(INFO) << "STARTUP: HTTP Server executor has "
-              << httpServer_->getExecutor()->numThreads() << " threads.";
+    PRESTO_STARTUP_LOG(INFO)
+        << "HTTP Server executor has "
+        << httpServer_->getExecutor()->numThreads() << " threads.";
   }
   if (spillExecutorPtr()) {
-    LOG(INFO) << "STARTUP: Spill executor has "
-              << spillExecutorPtr()->numThreads() << " threads.";
+    PRESTO_STARTUP_LOG(INFO) << "Spill executor has "
+                             << spillExecutorPtr()->numThreads() << " threads.";
   } else {
-    LOG(INFO) << "STARTUP: Spill executor was not configured.";
+    PRESTO_STARTUP_LOG(INFO) << "Spill executor was not configured.";
   }
 
-  LOG(INFO) << "STARTUP: Starting all periodic tasks...";
+  PRESTO_STARTUP_LOG(INFO) << "Starting all periodic tasks...";
   std::vector<std::shared_ptr<velox::connector::Connector>> connectors;
   for (auto connectorId : catalogNames) {
     connectors.emplace_back(velox::connector::getConnector(connectorId));
@@ -411,51 +388,55 @@ void PrestoServer::run() {
   // down.
   httpServer_->start(getHttpServerFilters());
 
-  LOG(INFO) << "SHUTDOWN: Stopping all periodic tasks...";
+  PRESTO_SHUTDOWN_LOG(INFO) << "Stopping all periodic tasks...";
   periodicTaskManager_->stop();
 
   // Destroy entities here to ensure we won't get any messages after Server
   // object is gone and to have nice log in case shutdown gets stuck.
-  LOG(INFO) << "SHUTDOWN: Destroying Task Resource...";
+  PRESTO_SHUTDOWN_LOG(INFO) << "Destroying Task Resource...";
   taskResource_.reset();
-  LOG(INFO) << "SHUTDOWN: Destroying Task Manager...";
+  PRESTO_SHUTDOWN_LOG(INFO) << "Destroying Task Manager...";
   taskManager_.reset();
-  LOG(INFO) << "SHUTDOWN: Destroying HTTP Server...";
+  PRESTO_SHUTDOWN_LOG(INFO) << "Destroying HTTP Server...";
   httpServer_.reset();
 
+  unregisterConnectors();
+
   auto cpuExecutor = driverCPUExecutor();
-  LOG(INFO) << "SHUTDOWN: Joining Driver CPU Executor '"
-            << cpuExecutor->getName()
-            << "': threads: " << cpuExecutor->numActiveThreads() << "/"
-            << cpuExecutor->numThreads()
-            << ", task queue: " << cpuExecutor->getTaskQueueSize();
+  PRESTO_SHUTDOWN_LOG(INFO)
+      << "Joining Driver CPU Executor '" << cpuExecutor->getName()
+      << "': threads: " << cpuExecutor->numActiveThreads() << "/"
+      << cpuExecutor->numThreads()
+      << ", task queue: " << cpuExecutor->getTaskQueueSize();
   cpuExecutor->join();
 
-  LOG(INFO) << "SHUTDOWN: Joining IO Executor '"
-            << connectorIoExecutor_->getName()
-            << "': threads: " << connectorIoExecutor_->numActiveThreads() << "/"
-            << connectorIoExecutor_->numThreads();
-  connectorIoExecutor_->join();
+  if (connectorIoExecutor_) {
+    PRESTO_SHUTDOWN_LOG(INFO)
+        << "Joining IO Executor '" << connectorIoExecutor_->getName()
+        << "': threads: " << connectorIoExecutor_->numActiveThreads() << "/"
+        << connectorIoExecutor_->numThreads();
+    connectorIoExecutor_->join();
+  }
 
-  LOG(INFO) << "SHUTDOWN: Done joining our executors.";
+  PRESTO_SHUTDOWN_LOG(INFO) << "Done joining our executors.";
 
   auto globalCPUKeepAliveExec = folly::getGlobalCPUExecutor();
   if (auto* pGlobalCPUExecutor = dynamic_cast<folly::CPUThreadPoolExecutor*>(
           globalCPUKeepAliveExec.get())) {
-    LOG(INFO) << "SHUTDOWN: Global CPU Executor '"
-              << pGlobalCPUExecutor->getName()
-              << "': threads: " << pGlobalCPUExecutor->numActiveThreads() << "/"
-              << pGlobalCPUExecutor->numThreads()
-              << ", task queue: " << pGlobalCPUExecutor->getTaskQueueSize();
+    PRESTO_SHUTDOWN_LOG(INFO)
+        << "Global CPU Executor '" << pGlobalCPUExecutor->getName()
+        << "': threads: " << pGlobalCPUExecutor->numActiveThreads() << "/"
+        << pGlobalCPUExecutor->numThreads()
+        << ", task queue: " << pGlobalCPUExecutor->getTaskQueueSize();
   }
 
   auto globalIOKeepAliveExec = folly::getGlobalIOExecutor();
   if (auto* pGlobalIOExecutor = dynamic_cast<folly::IOThreadPoolExecutor*>(
           globalIOKeepAliveExec.get())) {
-    LOG(INFO) << "SHUTDOWN: Global IO Executor '"
-              << pGlobalIOExecutor->getName()
-              << "': threads: " << pGlobalIOExecutor->numActiveThreads() << "/"
-              << pGlobalIOExecutor->numThreads();
+    PRESTO_SHUTDOWN_LOG(INFO)
+        << "Global IO Executor '" << pGlobalIOExecutor->getName()
+        << "': threads: " << pGlobalIOExecutor->numActiveThreads() << "/"
+        << pGlobalIOExecutor->numThreads();
   }
 }
 
@@ -464,96 +445,90 @@ void PrestoServer::initializeVeloxMemory() {
   auto systemConfig = SystemConfig::instance();
   uint64_t memoryGb = nodeConfig->nodeMemoryGb(
       [&]() { return systemConfig->systemMemoryGb(); });
-  LOG(INFO) << "Starting with node memory " << memoryGb << "GB";
-  std::unique_ptr<cache::SsdCache> ssd;
-  const auto asyncCacheSsdGb = systemConfig->asyncCacheSsdGb();
-  if (asyncCacheSsdGb) {
-    constexpr int32_t kNumSsdShards = 16;
-    cacheExecutor_ =
-        std::make_unique<folly::IOThreadPoolExecutor>(kNumSsdShards);
-    ssd = std::make_unique<cache::SsdCache>(
-        systemConfig->asyncCacheSsdPath(),
-        asyncCacheSsdGb << 30,
-        kNumSsdShards,
-        cacheExecutor_.get(),
-        systemConfig->asyncCacheSsdCheckpointGb() << 30);
-  }
+  PRESTO_STARTUP_LOG(INFO) << "Starting with node memory " << memoryGb << "GB";
+
   const int64_t memoryBytes = memoryGb << 30;
-  std::shared_ptr<memory::MemoryAllocator> allocator;
   if (systemConfig->useMmapAllocator()) {
     memory::MmapAllocator::Options options;
     options.capacity = memoryBytes;
     options.useMmapArena = systemConfig->useMmapArena();
     options.mmapArenaCapacityRatio = systemConfig->mmapArenaCapacityRatio();
-    allocator = std::make_shared<memory::MmapAllocator>(options);
+    allocator_ = std::make_shared<memory::MmapAllocator>(options);
   } else {
-    allocator = memory::MemoryAllocator::createDefaultInstance();
+    allocator_ = memory::MemoryAllocator::createDefaultInstance();
   }
-  cache_ = std::make_shared<cache::AsyncDataCache>(
-      allocator, memoryBytes, std::move(ssd));
-  memory::MemoryAllocator::setDefaultInstance(cache_.get());
+  if (systemConfig->asyncDataCacheEnabled()) {
+    std::unique_ptr<cache::SsdCache> ssd;
+    const auto asyncCacheSsdGb = systemConfig->asyncCacheSsdGb();
+    if (asyncCacheSsdGb > 0) {
+      constexpr int32_t kNumSsdShards = 16;
+      cacheExecutor_ =
+          std::make_unique<folly::IOThreadPoolExecutor>(kNumSsdShards);
+      auto asyncCacheSsdCheckpointGb =
+          systemConfig->asyncCacheSsdCheckpointGb();
+      auto asyncCacheSsdDisableFileCow =
+          systemConfig->asyncCacheSsdDisableFileCow();
+      PRESTO_STARTUP_LOG(INFO)
+          << "STARTUP: Initializing SSD cache with capacity " << asyncCacheSsdGb
+          << "GB, checkpoint size " << asyncCacheSsdCheckpointGb
+          << "GB, file cow "
+          << (asyncCacheSsdDisableFileCow ? "DISABLED" : "ENABLED");
+      ssd = std::make_unique<cache::SsdCache>(
+          systemConfig->asyncCacheSsdPath(),
+          asyncCacheSsdGb << 30,
+          kNumSsdShards,
+          cacheExecutor_.get(),
+          asyncCacheSsdCheckpointGb << 30,
+          asyncCacheSsdDisableFileCow);
+    }
+    cache_ = std::make_shared<cache::AsyncDataCache>(
+        allocator_, memoryBytes, std::move(ssd));
+    allocator_ = cache_;
+  } else {
+    VELOX_CHECK_EQ(
+        systemConfig->asyncCacheSsdGb(),
+        0,
+        "Async data cache cannot be disabled if ssd cache is enabled");
+  }
+
+  memory::MemoryAllocator::setDefaultInstance(allocator_.get());
   // Set up velox memory manager.
   memory::MemoryManager::getInstance(
-      memory::MemoryManager::Options{.capacity = memoryBytes}, true);
+      memory::MemoryManager::Options{
+          .capacity = memoryBytes,
+          .checkUsageLeak = systemConfig->enableMemoryLeakCheck()},
+      true);
 }
 
 void PrestoServer::stop() {
   // Make sure we only go here once.
   auto shutdownOnsetSec = SystemConfig::instance()->shutdownOnsetSec();
   if (not shuttingDown_.exchange(true)) {
-    LOG(INFO) << "SHUTDOWN: Initiating shutdown. Will wait for "
-              << shutdownOnsetSec << " seconds.";
+    PRESTO_SHUTDOWN_LOG(INFO) << "Initiating shutdown. Will wait for "
+                              << shutdownOnsetSec << " seconds.";
     this->setNodeState(NodeState::SHUTTING_DOWN);
 
     // Give coordinator some time to receive our new node state and stop sending
     // any tasks.
     std::this_thread::sleep_for(std::chrono::seconds(shutdownOnsetSec));
 
-    size_t numTasks{0};
-    auto taskNumbers = taskManager_->getTaskNumbers(numTasks);
-    size_t seconds = 0;
-    while (taskNumbers[velox::exec::TaskState::kRunning] > 0) {
-      LOG(INFO) << "SHUTDOWN: Waiting (" << seconds
-                << " seconds so far) for 'Running' tasks to complete. "
-                << numTasks << " tasks left: "
-                << PrestoTask::taskNumbersToString(taskNumbers);
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-      taskNumbers = taskManager_->getTaskNumbers(numTasks);
-      ++seconds;
-    }
+    taskManager_->waitForTasksToComplete();
 
     // Give coordinator some time to request tasks stats for completed or failed
     // tasks.
     std::this_thread::sleep_for(std::chrono::seconds(shutdownOnsetSec));
 
     if (httpServer_) {
-      LOG(INFO) << "SHUTDOWN: All tasks are completed. Stopping HTTP Server...";
+      PRESTO_SHUTDOWN_LOG(INFO)
+          << "All tasks are completed. Stopping HTTP Server...";
       httpServer_->stop();
-      LOG(INFO) << "SHUTDOWN: HTTP Server stopped.";
+      PRESTO_SHUTDOWN_LOG(INFO) << "HTTP Server stopped.";
     }
   }
 }
 
-std::function<folly::SocketAddress()> PrestoServer::discoveryAddressLookup() {
-  // Check if discovery URI is specified. Presto-on-Spark doesn't specify it.
-  auto discoveryUri = SystemConfig::instance()->discoveryUri();
-  if (!discoveryUri.has_value()) {
-    LOG(INFO)
-        << "STARTUP: Discovery URI is not specified - will not run Announcer.";
-    return nullptr;
-  }
-
-  try {
-    auto uri = folly::Uri(discoveryUri.value());
-
-    return [uri]() {
-      return folly::SocketAddress(uri.hostname(), uri.port(), true);
-    };
-  } catch (const VeloxUserError& e) {
-    // VeloxUserError is always logged as an error.
-    // Avoid logging again.
-    exit(EXIT_FAILURE);
-  }
+void PrestoServer::initializeCoordinatorDiscoverer() {
+  coordinatorDiscoverer_ = std::make_shared<CoordinatorDiscoverer>();
 }
 
 void PrestoServer::addAdditionalPeriodicTasks() {}
@@ -577,8 +552,8 @@ PrestoServer::getHttpServerFilters() {
   }
 
   if (SystemConfig::instance()->enableHttpStatsFilter()) {
-    auto filter = getHttpStatsFilter();
-    if (filter != nullptr) {
+    auto additionalFilters = getAdditionalHttpServerFilters();
+    for (auto& filter : additionalFilters) {
       filters.push_back(std::move(filter));
     }
   }
@@ -586,19 +561,22 @@ PrestoServer::getHttpServerFilters() {
   return filters;
 }
 
-std::unique_ptr<proxygen::RequestHandlerFactory>
-PrestoServer::getHttpStatsFilter() {
-  return std::make_unique<http::filters::StatsFilterFactory>();
+std::vector<std::unique_ptr<proxygen::RequestHandlerFactory>>
+PrestoServer::getAdditionalHttpServerFilters() {
+  std::vector<std::unique_ptr<proxygen::RequestHandlerFactory>> filters;
+  filters.emplace_back(std::make_unique<http::filters::StatsFilterFactory>());
+  return filters;
 }
 
 std::vector<std::string> PrestoServer::registerConnectors(
     const fs::path& configDirectoryPath) {
   static const std::string kPropertiesExtension = ".properties";
 
-  auto numIoThreads = SystemConfig::instance()->numIoThreads();
-  if (numIoThreads) {
+  const auto numConnectorIoThreads =
+      SystemConfig::instance()->numConnectorIoThreads();
+  if (numConnectorIoThreads) {
     connectorIoExecutor_ =
-        std::make_unique<folly::IOThreadPoolExecutor>(numIoThreads);
+        std::make_unique<folly::IOThreadPoolExecutor>(numConnectorIoThreads);
   }
   std::vector<std::string> catalogNames;
 
@@ -615,29 +593,34 @@ std::vector<std::string> PrestoServer::registerConnectors(
               std::move(connectorConf));
 
       auto connectorName = util::requiredProperty(*properties, kConnectorName);
-      const bool cacheEnabled = properties->get(kCacheEnabled, false);
-      const size_t cacheSize = properties->get(kCacheMaxCacheSize, 0);
 
       catalogNames.emplace_back(catalogName);
 
-      LOG(INFO) << "STARTUP: Registering catalog " << catalogName
-                << " using connector " << connectorName
-                << ", cache enabled: " << cacheEnabled
-                << ", cache size: " << cacheSize;
+      PRESTO_STARTUP_LOG(INFO) << "Registering catalog " << catalogName
+                               << " using connector " << connectorName;
 
-      std::shared_ptr<velox::connector::Connector> connector;
-      if (cacheEnabled && cacheSize > 0) {
-        connector = connectorWithCache(connectorName, catalogName, properties);
-        cacheRamCapacityGb_ += cacheSize / 1024; // cacheSize is in Mb.
-      } else {
-        connector =
-            facebook::velox::connector::getConnectorFactory(connectorName)
-                ->newConnector(catalogName, std::move(properties));
-      }
+      std::shared_ptr<velox::connector::Connector> connector =
+          facebook::velox::connector::getConnectorFactory(connectorName)
+              ->newConnector(
+                  catalogName,
+                  std::move(properties),
+                  connectorIoExecutor_.get());
       velox::connector::registerConnector(connector);
     }
   }
   return catalogNames;
+}
+
+void PrestoServer::unregisterConnectors() {
+  PRESTO_SHUTDOWN_LOG(INFO) << "Unregistering connectors";
+  auto connectors = facebook::velox::connector::getAllConnectors();
+  std::unordered_set<std::string> connectorIds;
+  connectorIds.reserve(connectors.size());
+  for (const auto& connectorEntry : connectors) {
+    facebook::velox::connector::unregisterConnector(connectorEntry.first);
+  }
+  PRESTO_SHUTDOWN_LOG(INFO)
+      << "Unregistered connectors: " << folly::join(',', connectorIds);
 }
 
 void PrestoServer::registerShuffleInterfaceFactories() {
@@ -655,6 +638,22 @@ void PrestoServer::registerCustomOperators() {
       std::make_unique<operators::ShuffleReadTranslator>());
 }
 
+void PrestoServer::registerFunctions() {
+  static const std::string kPrestoDefaultPrefix{"presto.default."};
+  velox::functions::prestosql::registerAllScalarFunctions(kPrestoDefaultPrefix);
+  velox::aggregate::prestosql::registerAllAggregateFunctions(
+      kPrestoDefaultPrefix);
+  velox::window::prestosql::registerAllWindowFunctions(kPrestoDefaultPrefix);
+  if (SystemConfig::instance()->registerTestFunctions()) {
+    velox::functions::prestosql::registerComparisonFunctions(
+        "json.test_schema.");
+    velox::aggregate::prestosql::registerAllAggregateFunctions(
+        "json.test_schema.");
+  }
+}
+
+void PrestoServer::registerRemoteFunctions() {}
+
 void PrestoServer::registerVectorSerdes() {
   if (!velox::isRegisteredVectorSerde()) {
     velox::serializer::presto::PrestoVectorSerde::registerVectorSerde();
@@ -670,34 +669,21 @@ void PrestoServer::registerStatsCounters() {
   registerVeloxCounters();
 }
 
-std::shared_ptr<velox::connector::Connector> PrestoServer::connectorWithCache(
-    const std::string& connectorName,
-    const std::string& catalogName,
-    std::shared_ptr<const velox::Config> properties) {
-  VELOX_CHECK_NOT_NULL(cache_.get());
-  LOG(INFO) << "STARTUP: Using AsyncDataCache";
-  return facebook::velox::connector::getConnectorFactory(connectorName)
-      ->newConnector(
-          catalogName, std::move(properties), connectorIoExecutor_.get());
-}
-
 void PrestoServer::populateMemAndCPUInfo() {
   auto systemConfig = SystemConfig::instance();
-  const int64_t nodeMemoryGb =
-      systemConfig->systemMemoryGb() - cacheRamCapacityGb_;
+  const int64_t nodeMemoryGb = systemConfig->systemMemoryGb();
   protocol::MemoryInfo memoryInfo{
       {double(nodeMemoryGb), protocol::DataUnit::GIGABYTE}};
 
   // Fill the only memory pool info (general)
   auto& poolInfo = memoryInfo.pools["general"];
-  auto* pool = taskResource_->getPool();
 
   // Fill global pool fields.
   poolInfo.maxBytes = nodeMemoryGb * 1024 * 1024 * 1024;
   // TODO(sperhsin): If 'current bytes' is the same as we get by summing up all
   // child contexts below, then use the one we sum up, rather than call
   // 'getCurrentBytes'.
-  poolInfo.reservedBytes = pool->getCurrentBytes();
+  poolInfo.reservedBytes = pool_->currentBytes();
   poolInfo.reservedRevocableBytes = 0;
 
   // Fill basic per-query fields.
@@ -705,7 +691,7 @@ void PrestoServer::populateMemAndCPUInfo() {
   size_t numContexts{0};
   queryCtxMgr->visitAllContexts([&](const protocol::QueryId& queryId,
                                     const velox::core::QueryCtx* queryCtx) {
-    const protocol::Long bytes = queryCtx->pool()->getCurrentBytes();
+    const protocol::Long bytes = queryCtx->pool()->currentBytes();
     poolInfo.queryMemoryReservations.insert({queryId, bytes});
     // TODO(spershin): Might want to see what Java exports and export similar
     // info (like child memory pools).
@@ -716,39 +702,6 @@ void PrestoServer::populateMemAndCPUInfo() {
   REPORT_ADD_STAT_VALUE(kCounterNumQueryContexts, numContexts);
   cpuMon_.update();
   **memoryInfo_.wlock() = std::move(memoryInfo);
-}
-
-void PrestoServer::runOperation(
-    proxygen::HTTPMessage* message,
-    proxygen::ResponseHandler* downstream) {
-  try {
-    ServerOperation op = buildServerOpFromHttpRequest(message);
-    switch (op.target) {
-      case ServerOperation::Target::kConnector:
-        http::sendOkResponse(downstream, connectorOperation(op, message));
-        break;
-    }
-  } catch (const VeloxUserError& ex) {
-    http::sendErrorResponse(downstream, ex.what());
-  } catch (const VeloxException& ex) {
-    http::sendErrorResponse(downstream, ex.what());
-  }
-}
-
-std::string PrestoServer::connectorOperation(
-    const ServerOperation& op,
-    proxygen::HTTPMessage* message) {
-  switch (op.action) {
-    case ServerOperation::Action::kClearCache:
-      return clearConnectorCache(message);
-    case ServerOperation::Action::kGetCacheStats:
-      return getConnectorCacheStats(message);
-    default:
-      VELOX_USER_FAIL(
-          "Target '{}' does not support action '{}'",
-          ServerOperation::targetString(op.target),
-          ServerOperation::actionString(op.action));
-  }
 }
 
 static protocol::Duration getUptime(
@@ -785,8 +738,7 @@ void PrestoServer::reportServerInfo(proxygen::ResponseHandler* downstream) {
 
 void PrestoServer::reportNodeStatus(proxygen::ResponseHandler* downstream) {
   auto systemConfig = SystemConfig::instance();
-  const int64_t nodeMemoryGb =
-      systemConfig->systemMemoryGb() - cacheRamCapacityGb_;
+  const int64_t nodeMemoryGb = systemConfig->systemMemoryGb();
 
   const double cpuLoadPct{cpuMon_.getCPULoadPct()};
 
@@ -805,7 +757,7 @@ void PrestoServer::reportNodeStatus(proxygen::ResponseHandler* downstream) {
       (int)std::thread::hardware_concurrency(),
       cpuLoadPct,
       cpuLoadPct,
-      taskResource_->getPool()->getCurrentBytes(),
+      pool_->currentBytes(),
       nodeMemoryGb * 1024 * 1024 * 1024,
       nonHeapUsed};
 

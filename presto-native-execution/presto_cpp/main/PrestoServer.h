@@ -20,6 +20,7 @@
 #include <velox/exec/Task.h>
 #include <velox/expression/Expr.h>
 #include "presto_cpp/main/CPUMon.h"
+#include "presto_cpp/main/CoordinatorDiscoverer.h"
 #include "velox/common/caching/AsyncDataCache.h"
 #include "velox/common/memory/MemoryAllocator.h"
 #if __has_include("filesystem")
@@ -43,7 +44,6 @@ class HttpServer;
 }
 
 namespace proxygen {
-class HTTPMessage;
 class ResponseHandler;
 } // namespace proxygen
 
@@ -56,7 +56,6 @@ namespace facebook::presto {
 // Three states our server can be in.
 enum class NodeState { ACTIVE, INACTIVE, SHUTTING_DOWN };
 
-struct ServerOperation;
 class SignalHandler;
 class TaskManager;
 class TaskResource;
@@ -85,27 +84,40 @@ class PrestoServer {
   /// tasks.
   virtual void addAdditionalPeriodicTasks();
 
-  virtual std::function<folly::SocketAddress()> discoveryAddressLookup();
+  virtual void initializeCoordinatorDiscoverer();
 
   virtual std::shared_ptr<velox::exec::TaskListener> getTaskListener();
 
   virtual std::shared_ptr<velox::exec::ExprSetListener> getExprSetListener();
 
-  /// Returns statistics based http filter.
-  virtual std::unique_ptr<proxygen::RequestHandlerFactory> getHttpStatsFilter();
+  /// Returns any additional http filters.
+  virtual std::vector<std::unique_ptr<proxygen::RequestHandlerFactory>>
+  getAdditionalHttpServerFilters();
 
   virtual std::vector<std::string> registerConnectors(
       const fs::path& configDirectoryPath);
 
+  /// Invoked by presto shutdown procedure to unregister connectors.
+  virtual void unregisterConnectors();
+
   virtual void registerShuffleInterfaceFactories();
 
   virtual void registerCustomOperators();
+
+  virtual void registerFunctions();
+
+  virtual void registerRemoteFunctions();
 
   virtual void registerVectorSerdes();
 
   virtual void registerFileSystems();
 
   virtual void registerStatsCounters();
+
+  /// Invoked after creating global (singleton) config objects (SystemConfig and
+  /// NodeConfig) and before loading their properties from the file.
+  /// In the implementation any extra config properties can be registered.
+  virtual void registerExtraConfigProperties() {}
 
   /// Invoked to get the list of filters passed to the http server.
   std::vector<std::unique_ptr<proxygen::RequestHandlerFactory>>
@@ -114,11 +126,6 @@ class PrestoServer {
   void initializeVeloxMemory();
 
  protected:
-  virtual std::shared_ptr<velox::connector::Connector> connectorWithCache(
-      const std::string& connectorName,
-      const std::string& connectorId,
-      std::shared_ptr<const velox::Config> properties);
-
   void reportMemoryInfo(proxygen::ResponseHandler* downstream);
 
   void reportServerInfo(proxygen::ResponseHandler* downstream);
@@ -127,16 +134,9 @@ class PrestoServer {
 
   void populateMemAndCPUInfo();
 
-  /// Invoked to run operation on this server per http request.
-  void runOperation(
-      proxygen::HTTPMessage* message,
-      proxygen::ResponseHandler* downstream);
-
-  std::string connectorOperation(
-      const ServerOperation& op,
-      proxygen::HTTPMessage* message);
-
   const std::string configDirectoryPath_;
+
+  std::shared_ptr<CoordinatorDiscoverer> coordinatorDiscoverer_;
 
   // Executor for background writing into SSD cache.
   std::unique_ptr<folly::IOThreadPoolExecutor> cacheExecutor_;
@@ -144,11 +144,20 @@ class PrestoServer {
   // Executor for async IO for connectors.
   std::unique_ptr<folly::IOThreadPoolExecutor> connectorIoExecutor_;
 
-  // Instance of AsyncDataCache used for all large allocations.
+  // If not null,  the instance of AsyncDataCache used for in-memory file cache.
   std::shared_ptr<velox::cache::AsyncDataCache> cache_;
+
+  // Instance of MemoryAllocator used for all query memory allocations.
+  //
+  // NOTE: AsyncDataCache implements MemoryAllocator interface and wraps on top
+  // of a real memory allocator for the actual memory allocation. So if 'cache_'
+  // has been set, 'allocator_' is also set to 'cache_'. It provides memory
+  // allocations for both file cache and query memory.
+  std::shared_ptr<velox::memory::MemoryAllocator> allocator_;
 
   std::unique_ptr<http::HttpServer> httpServer_;
   std::unique_ptr<SignalHandler> signalHandler_;
+  std::shared_ptr<velox::memory::MemoryPool> pool_;
   std::unique_ptr<TaskManager> taskManager_;
   std::unique_ptr<TaskResource> taskResource_;
   std::atomic<NodeState> nodeState_{NodeState::ACTIVE};
@@ -166,9 +175,6 @@ class PrestoServer {
   std::string nodeId_;
   std::string address_;
   std::string nodeLocation_;
-
-  /// Total capacity of all caches in the connectors
-  size_t cacheRamCapacityGb_{0};
 };
 
 } // namespace facebook::presto

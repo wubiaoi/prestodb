@@ -23,6 +23,7 @@ import com.facebook.presto.sql.analyzer.FeaturesConfig.JoinDistributionType;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.JoinReorderingStrategy;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.PartialAggregationStrategy;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.PartitioningPrecisionStrategy;
+import com.facebook.presto.sql.analyzer.FeaturesConfig.PushDownFilterThroughCrossJoinStrategy;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.RandomizeOuterJoinNullKeyStrategy;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.SingleStreamSpillerChoice;
 import com.google.common.collect.ImmutableMap;
@@ -37,6 +38,7 @@ import static com.facebook.airlift.configuration.testing.ConfigAssertions.assert
 import static com.facebook.presto.sql.analyzer.FeaturesConfig.AggregationPartitioningMergingStrategy.LEGACY;
 import static com.facebook.presto.sql.analyzer.FeaturesConfig.AggregationPartitioningMergingStrategy.TOP_DOWN;
 import static com.facebook.presto.sql.analyzer.FeaturesConfig.JoinDistributionType.BROADCAST;
+import static com.facebook.presto.sql.analyzer.FeaturesConfig.JoinNotNullInferenceStrategy.USE_FUNCTION_METADATA;
 import static com.facebook.presto.sql.analyzer.FeaturesConfig.JoinReorderingStrategy.NONE;
 import static com.facebook.presto.sql.analyzer.FeaturesConfig.PartialMergePushdownStrategy.PUSH_THROUGH_LOW_MEMORY_OPERATORS;
 import static com.facebook.presto.sql.analyzer.FeaturesConfig.SPILLER_SPILL_PATH;
@@ -78,6 +80,7 @@ public class TestFeaturesConfig
                 .setUseHistoryBasedPlanStatistics(false)
                 .setTrackHistoryBasedPlanStatistics(false)
                 .setUsePerfectlyConsistentHistories(false)
+                .setHistoryCanonicalPlanNodeLimit(1000)
                 .setRedistributeWrites(true)
                 .setScaleWriters(false)
                 .setWriterMinSize(new DataSize(32, MEGABYTE))
@@ -176,6 +179,7 @@ public class TestFeaturesConfig
                 .setOptimizeCommonSubExpressions(true)
                 .setPreferDistributedUnion(true)
                 .setOptimizeNullsInJoin(false)
+                .setJoinsNotNullInferenceStrategy(FeaturesConfig.JoinNotNullInferenceStrategy.NONE)
                 .setSkipRedundantSort(true)
                 .setWarnOnNoTableLayoutFilter("")
                 .setInlineSqlFunctions(true)
@@ -200,6 +204,7 @@ public class TestFeaturesConfig
                 .setVerboseRuntimeStatsEnabled(false)
                 .setAggregationIfToFilterRewriteStrategy(AggregationIfToFilterRewriteStrategy.DISABLED)
                 .setAnalyzerType("BUILTIN")
+                .setPreProcessMetadataCalls(false)
                 .setStreamingForPartialAggregationEnabled(false)
                 .setMaxStageCountForEagerScheduling(25)
                 .setHyperloglogStandardErrorWarningThreshold(0.004)
@@ -212,6 +217,7 @@ public class TestFeaturesConfig
                 .setNativeExecutionEnabled(false)
                 .setNativeExecutionExecutablePath("./presto_server")
                 .setNativeExecutionProgramArguments("")
+                .setNativeExecutionProcessReuseEnabled(true)
                 .setRandomizeOuterJoinNullKeyEnabled(false)
                 .setRandomizeOuterJoinNullKeyStrategy(RandomizeOuterJoinNullKeyStrategy.DISABLED)
                 .setOptimizeConditionalAggregationEnabled(false)
@@ -221,7 +227,12 @@ public class TestFeaturesConfig
                 .setPrefilterForGroupbyLimit(false)
                 .setOptimizeJoinProbeForEmptyBuildRuntimeEnabled(false)
                 .setUseDefaultsForCorrelatedAggregationPushdownThroughOuterJoins(true)
-                .setMergeDuplicateAggregationsEnabled(true));
+                .setMergeDuplicateAggregationsEnabled(true)
+                .setMergeAggregationsWithAndWithoutFilter(false)
+                .setSimplifyPlanWithEmptyInput(true)
+                .setPushDownFilterExpressionEvaluationThroughCrossJoin(PushDownFilterThroughCrossJoinStrategy.REWRITTEN_TO_INNER_JOIN)
+                .setDefaultJoinSelectivityCoefficient(0)
+                .setRewriteCrossJoinWithOrFilterToInnerJoin(true));
     }
 
     @Test
@@ -270,6 +281,7 @@ public class TestFeaturesConfig
                 .put("optimizer.use-history-based-plan-statistics", "true")
                 .put("optimizer.track-history-based-plan-statistics", "true")
                 .put("optimizer.use-perfectly-consistent-histories", "true")
+                .put("optimizer.history-canonical-plan-node-limit", "2")
                 .put("redistribute-writes", "false")
                 .put("scale-writers", "true")
                 .put("writer-min-size", "42GB")
@@ -347,6 +359,7 @@ public class TestFeaturesConfig
                 .put("optimize-common-sub-expressions", "false")
                 .put("prefer-distributed-union", "false")
                 .put("optimize-nulls-in-join", "true")
+                .put("optimizer.joins-not-null-inference-strategy", "USE_FUNCTION_METADATA")
                 .put("warn-on-no-table-layout-filter", "ry@nlikestheyankees,ds")
                 .put("inline-sql-functions", "false")
                 .put("check-access-control-on-utilized-columns-only", "true")
@@ -369,6 +382,7 @@ public class TestFeaturesConfig
                 .put("consider-query-filters-for-materialized-view-partitions", "false")
                 .put("query-optimization-with-materialized-view-enabled", "true")
                 .put("analyzer-type", "CRUX")
+                .put("pre-process-metadata-calls", "true")
                 .put("verbose-runtime-stats-enabled", "true")
                 .put("optimizer.aggregation-if-to-filter-rewrite-strategy", "filter_with_if")
                 .put("streaming-for-partial-aggregation-enabled", "true")
@@ -383,6 +397,7 @@ public class TestFeaturesConfig
                 .put("native-execution-enabled", "true")
                 .put("native-execution-executable-path", "/bin/echo")
                 .put("native-execution-program-arguments", "--v 1")
+                .put("native-execution-process-reuse-enabled", "false")
                 .put("optimizer.randomize-outer-join-null-key", "true")
                 .put("optimizer.randomize-outer-join-null-key-strategy", "key_from_outer_join")
                 .put("optimizer.optimize-conditional-aggregation-enabled", "true")
@@ -393,6 +408,11 @@ public class TestFeaturesConfig
                 .put("optimizer.optimize-probe-for-empty-build-runtime", "true")
                 .put("optimizer.use-defaults-for-correlated-aggregation-pushdown-through-outer-joins", "false")
                 .put("optimizer.merge-duplicate-aggregations", "false")
+                .put("optimizer.merge-aggregations-with-and-without-filter", "true")
+                .put("optimizer.simplify-plan-with-empty-input", "false")
+                .put("optimizer.push-down-filter-expression-evaluation-through-cross-join", "DISABLED")
+                .put("optimizer.rewrite-cross-join-with-or-filter-to-inner-join", "false")
+                .put("optimizer.default-join-selectivity-coefficient", "0.5")
                 .build();
 
         FeaturesConfig expected = new FeaturesConfig()
@@ -429,6 +449,7 @@ public class TestFeaturesConfig
                 .setUseHistoryBasedPlanStatistics(true)
                 .setTrackHistoryBasedPlanStatistics(true)
                 .setUsePerfectlyConsistentHistories(true)
+                .setHistoryCanonicalPlanNodeLimit(2)
                 .setRedistributeWrites(false)
                 .setScaleWriters(true)
                 .setWriterMinSize(new DataSize(42, GIGABYTE))
@@ -515,6 +536,7 @@ public class TestFeaturesConfig
                 .setOptimizeCommonSubExpressions(false)
                 .setPreferDistributedUnion(false)
                 .setOptimizeNullsInJoin(true)
+                .setJoinsNotNullInferenceStrategy(USE_FUNCTION_METADATA)
                 .setSkipRedundantSort(false)
                 .setWarnOnNoTableLayoutFilter("ry@nlikestheyankees,ds")
                 .setInlineSqlFunctions(false)
@@ -540,6 +562,7 @@ public class TestFeaturesConfig
                 .setVerboseRuntimeStatsEnabled(true)
                 .setAggregationIfToFilterRewriteStrategy(AggregationIfToFilterRewriteStrategy.FILTER_WITH_IF)
                 .setAnalyzerType("CRUX")
+                .setPreProcessMetadataCalls(true)
                 .setStreamingForPartialAggregationEnabled(true)
                 .setMaxStageCountForEagerScheduling(123)
                 .setHyperloglogStandardErrorWarningThreshold(0.02)
@@ -552,6 +575,7 @@ public class TestFeaturesConfig
                 .setNativeExecutionEnabled(true)
                 .setNativeExecutionExecutablePath("/bin/echo")
                 .setNativeExecutionProgramArguments("--v 1")
+                .setNativeExecutionProcessReuseEnabled(false)
                 .setRandomizeOuterJoinNullKeyEnabled(true)
                 .setRandomizeOuterJoinNullKeyStrategy(RandomizeOuterJoinNullKeyStrategy.KEY_FROM_OUTER_JOIN)
                 .setOptimizeConditionalAggregationEnabled(true)
@@ -561,7 +585,12 @@ public class TestFeaturesConfig
                 .setPrefilterForGroupbyLimit(true)
                 .setOptimizeJoinProbeForEmptyBuildRuntimeEnabled(true)
                 .setUseDefaultsForCorrelatedAggregationPushdownThroughOuterJoins(false)
-                .setMergeDuplicateAggregationsEnabled(false);
+                .setMergeDuplicateAggregationsEnabled(false)
+                .setMergeAggregationsWithAndWithoutFilter(true)
+                .setSimplifyPlanWithEmptyInput(false)
+                .setDefaultJoinSelectivityCoefficient(0.5)
+                .setPushDownFilterExpressionEvaluationThroughCrossJoin(PushDownFilterThroughCrossJoinStrategy.DISABLED)
+                .setRewriteCrossJoinWithOrFilterToInnerJoin(false);
         assertFullMapping(properties, expected);
     }
 

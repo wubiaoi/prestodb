@@ -48,12 +48,16 @@ import com.facebook.presto.sql.planner.plan.InternalPlanVisitor;
 import com.facebook.presto.sql.planner.plan.NativeExecutionNode;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -64,6 +68,7 @@ import static com.facebook.presto.SystemSessionProperties.isExchangeChecksumEnab
 import static com.facebook.presto.SystemSessionProperties.isExchangeCompressionEnabled;
 import static com.facebook.presto.operator.PipelineExecutionStrategy.UNGROUPED_EXECUTION;
 import static com.facebook.presto.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;
+import static com.facebook.presto.sql.planner.SchedulingOrderVisitor.scheduleOrder;
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
 
@@ -101,6 +106,7 @@ public class NativeExecutionOperator
     private NativeExecutionTask task;
     private CompletableFuture<Void> taskStatusFuture;
     private List<TaskSource> taskSource = new ArrayList<>();
+    private Map<PlanNodeId, List<ScheduledSplit>> splits = new HashMap<>();
     private boolean finished;
 
     private final AtomicReference<NativeExecutionInfo> info = new AtomicReference<>(null);
@@ -213,7 +219,7 @@ public class NativeExecutionOperator
     private void createProcess()
     {
         try {
-            this.process = processFactory.createNativeExecutionProcess(
+            this.process = processFactory.getNativeExecutionProcess(
                     operatorContext.getSession(),
                     URI.create(NATIVE_EXECUTION_SERVER_URI));
             log.info("Starting native execution process of task" + getOperatorContext().getDriverContext().getTaskId().toString());
@@ -271,8 +277,7 @@ public class NativeExecutionOperator
         if (finished) {
             return Optional::empty;
         }
-
-        taskSource.add(new TaskSource(split.getPlanNodeId(), ImmutableSet.of(split), true));
+        splits.computeIfAbsent(split.getPlanNodeId(), key -> new ArrayList<>()).add(split);
 
         return Optional::empty;
     }
@@ -280,6 +285,16 @@ public class NativeExecutionOperator
     @Override
     public void noMoreSplits()
     {
+        // all splits belonging to a single planNodeId should be within a single taskSource
+        splits.forEach((planNodeId, split) -> taskSource.add(new TaskSource(planNodeId, ImmutableSet.copyOf(split), true)));
+
+        // When joining bucketed table with a non-bucketed table with a filter on "$bucket",
+        // some tasks may not have splits for the bucketed table. In this case we still need
+        // to send no-more-splits message to Velox.
+        Set<PlanNodeId> tableScanIds = Sets.newHashSet(scheduleOrder(planFragment.getRoot()));
+        tableScanIds.stream()
+                .filter(id -> !splits.containsKey(id))
+                .forEach(id -> taskSource.add(new TaskSource(id, ImmutableSet.of(), true)));
     }
 
     @Override
@@ -288,10 +303,6 @@ public class NativeExecutionOperator
         systemMemoryContext.setBytes(0);
         if (task != null) {
             task.stop();
-        }
-        if (process != null) {
-            log.info("Closing native execution process for task " + getOperatorContext().getDriverContext().getTaskId().toString());
-            process.close();
         }
     }
 
